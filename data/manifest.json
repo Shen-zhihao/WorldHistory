@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "cutoff": "2026-10-31",
+  "generatedAt": "2026-10-31T03:00:07.993Z",
+  "selectedEvents": 13037,
+  "archiveRecords": 53121,
+  "months": 2722,
+  "files": [
+    {
+      "path": "data/events.json.gz",
+      "bytes": 7262816,
+      "sha256": "304c9fee14678561734ff5f8bc78bd264cdb4b7c6c31cee2e2865f1125c5dcc0"
+    },
+    {
+      "path": "data/supplemental-events.json.gz",
+      "bytes": 929312,
+      "sha256": "ae48669d78f9a5e61904ec568e27be54b64575233aaae010ec3df722aa9253ad"
+    },
+    {
+      "path": "public/fonts/dm-sans.woff2",
+      "bytes": 36980,
+      "sha256": "468d56b6b25b05b70190b6c233d773f6f1770e8579827ce022a57f03fa8002fb"
+    },
+    {
+      "path": "public/fonts/space-grotesk.woff2",
+      "bytes": 22320,
+      "sha256": "a0d054c4af557de20afd6ca59f47ab353bcaec49c63ff04b6c9d39d0f8910557"
+    },
+    {
+      "path": "public/geo/countries-110m.json",
+      "bytes": 107761,
+      "sha256": "2516c915867c7baf18ddec727aec46c315541a07cfb3d79a6559b05d5e94eee8"
+    },
+    {
+      "path": "public/geo/history/world_1800.geojson.gz",
+      "bytes": 109713,
+      "sha256": "6630acbb55b1c1037f9eb07d2ae7a8dd28d0540b8f8c72e5360b780585651124"
+    },
+    {
+      "path": "public/geo/history/world_1815.geojson.gz",
+      "bytes": 98048,
+      "sha256": "1cef2dc4830872c6e9f82b8b64a65f5a3d07bb5fa92c7c2aed42969278b8c6ce"
+    },
+    {
+      "path": "public/geo/history/world_1878.geojson.gz",
+      "bytes": 86079,
+      "sha256": "9a37cf64b2915c00f9c2b3811ca77af7f8da2e366e63916c69d4b54e1789ec16"
+    },
+    {
+      "path": "public/geo/history/world_1880.geojson.gz",
+      "bytes": 85807,
+      "sha256": "022ede8ea24d9662501fff0260e54eca5a0d7d5d31ce3ec925e9bf9a2f046528"
+    },
+    {
+      "path": "public/geo/history/world_1900.geojson.gz",
+      "bytes": 83671,
+      "sha256": "60a14301d6e206f78908a81510eb8c96ec02beb7937380fed80a955342f3ad47"
+    },
+    {
+      "path": "public/geo/history/world_1914.geojson.gz",
+      "bytes": 80463,
+      "sha256": "0167db886ffb30ed94a4db381ca1f91d4ca2e95ec83b1f3e95173f7f76442392"
+    },
+    {
+      "path": "public/geo/history/world_1920.geojson.gz",
+      "bytes": 85452,
+      "sha256": "a2c2efa6e1508f78905778a69daac97dc05cd777eb1b805332169c4274c2eaf6"
+    },
+    {
+      "path": "public/geo/history/world_1930.geojson.gz",
+      "bytes": 83489,
+      "sha256": "0773b16b61135f414d0f110ea78bb3bf57b43737d61e641c7b3b091da99b3c00"
+    },
+    {
+      "path": "public/geo/history/world_1938.geojson.gz",
+      "bytes": 92072,
+      "sha256": "744b5dcb914d38733f450aae2d004d60f30ffae77dddc550f3ae7ad7df4a3ad8"
+    },
+    {
+      "path": "public/geo/history/world_1945.geojson.gz",
+      "bytes": 84310,
+      "sha256": "29b7601810939ce4f0e7da345b0e0505cd8a0850cad8c3e9d99625dfdc4a616d"
+    },
+    {
+      "path": "public/geo/history/world_1960.geojson.gz",
+      "bytes": 78683,
+      "sha256": "4ba28151f7a9a0d7fa691aa4c4f2edcb02969c0a5f3c694136a7f0fab3efb1fd"
+    },
+    {
+      "path": "public/geo/history/world_1994.geojson.gz",
+      "bytes": 88914,
+      "sha256": "aec0643e0d9ae0ce65522f5d21740c5520a7767652d6e2076f5c8037e37337d7"
+    },
+    {
+      "path": "public/geo/history/world_2000.geojson.gz",
+      "bytes": 89038,
+      "sha256": "0de08c9790e14670e8fd68476f84c92ca5f60e7be5d07bd4a825cc4a732c1a05"
+    },
+    {
+      "path": "public/geo/history/world_2010.geojson.gz",
+      "bytes": 89016,
+      "sha256": "4c8e6c746f3c2151df4c10138bc20ff6e333dd0a35c73497bc326ff036b398c5"
+    },
+    {
+      "path": "public/images/events/apollo-11-b79c77ac.json",
+      "bytes": 771,
+      "sha256": "aaca5810b54e04e47e473dd586e5666b91ae0c9332621b9e519b1ae4922ceedc"
+    },
+    {
+      "path": "public/images/events/apollo-11-b79c77ac.webp",
+      "bytes": 156786,
+      "sha256": "387665f71b07edcbf726e10488bb283c6cdd1084595ffe389c454eb84d14047a"
+    },
+    {
+      "path": "public/images/events/berlin-wall-795c4ad3.json",
+      "bytes": 922,
+      "sha256": "766ce4b5cad4916900e2d004ec52a64e361fc4b3a2a03548a33a1fbd0864240a"
+    },
+    {
+      "path": "public/images/events/berlin-wall-795c4ad3.webp",
+      "bytes": 55746,
+      "sha256": "cb24e8a258d1546c9345a47c44e87a460923c4b7afcfea27eb34d3a81e58d6e9"
+    },
+    {
+      "path": "public/images/events/hiroshima-a270c41a.json",
+      "bytes": 779,
+      "sha256": "c8abd050b70e7142374666654204f40a49d670b1ed1e2bcc878abb016706a32a"
+    },
+    {
+      "path": "public/images/events/hiroshima-a270c41a.webp",
+      "bytes": 57314,
+      "sha256": "d34d8eef79d8ac2834c89ade6dde868c554e47e617dfca2a00c4128c2e19b58d"
+    },
+    {
+      "path": "public/images/events/titanic-4e72a8f6.json",
+      "bytes": 735,
+      "sha256": "48643fcc1d12162dedf17351c43deb5e38b77eecdc111147d01d309d21786af9"
+    },
+    {
+      "path": "public/images/events/titanic-4e72a8f6.webp",
+      "bytes": 59072,
+      "sha256": "29649e2607cbdcb5a61d7a21d463b09b3d61180858ace945b4e31d6db4b20c38"
+    },
+    {
+      "path": "public/images/events/wright-first-flight-b9d3a17e.json",
+      "bytes": 715,
+      "sha256": "b738ef442055b68c458f3835585b84932d573f440ffce96d021b4bed9b246c95"
+    },
+    {
+      "path": "public/images/events/wright-first-flight-b9d3a17e.webp",
+      "bytes": 42346,
+      "sha256": "cfef6c46e530a9d96dfc25a7154b64842dc2a15bd95d8c3909fd09f4f722d5e0"
+    }
+  ]
+}

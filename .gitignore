@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+.env*
+!.env.example
+*.tsbuildinfo
+data/*.sqlite*
+data/cache/
+data/source-cache/
+data/*.lock
+data/*.tmp-*
+public/media/
+.DS_Store
+playwright-report/
+test-results/

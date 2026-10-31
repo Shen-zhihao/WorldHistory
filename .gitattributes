@@ -1,0 +1,7 @@
+* text=auto
+*.gz -text
+*.webp -text
+*.woff2 -text
+*.png -text
+*.jpg -text
+*.sqlite* -text

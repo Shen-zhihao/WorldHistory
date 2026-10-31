@@ -1,0 +1,36 @@
+{
+  "name": "world-history-atlas",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "sync": "tsx scripts/sync.ts",
+    "media": "tsx scripts/cache-media.ts",
+    "data:verify": "tsx scripts/verify-data.ts",
+    "db:restore": "tsx scripts/restore.ts"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "lucide-react": "^1.65.0",
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "sharp": "^0.35.5",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.187.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
