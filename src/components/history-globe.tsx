@@ -8,6 +8,8 @@ import { countryByCode, countryByNumeric } from '@/lib/countries';
 import { getMapEra } from '@/lib/map-eras';
 import type { HistoryEvent } from '@/lib/types';
 import type { Locale } from '@/lib/locale';
+import { createGlobeFlight, sampleGlobeFlight, type GlobeFlight } from '@/lib/globe-motion';
+import { GlobePointerGesture } from '@/lib/globe-gesture';
 
 type Coordinate = [number, number];
 type Polygon = Coordinate[][];
@@ -18,6 +20,7 @@ type Topology = { transform: { scale: Coordinate; translate: Coordinate }; arcs:
 export interface HistoryGlobeProps {
   events: HistoryEvent[];
   selectedCountry: string | null;
+  selectedTerritory?: string | null;
   onCountrySelect: (code: string | null) => void;
   onEventSelect: (event: HistoryEvent) => void;
   activeEventId?: string | null;
@@ -138,17 +141,18 @@ function borderGeometry(items: GeoCountry[], radius = 1.004) {
   return new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 }
 
-function landTexture(items: GeoCountry[]) {
+function landTexture(items: GeoCountry[], selectedCode?: string | null, selectedName?: string | null) {
   const canvas = document.createElement('canvas'); canvas.width = 2048; canvas.height = 1024;
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#061c29'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#080d22'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   items.forEach(country => country.polygons.forEach(polygon => {
     ctx.beginPath();
     polygon.forEach(ring => ring.forEach(([lng, lat], i) => {
       const x = (lng + 180) / 360 * canvas.width; const y = (90 - lat) / 180 * canvas.height;
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }));
-    ctx.fillStyle = '#17515b'; ctx.fill('evenodd');
+    const selected = (selectedCode && country.code === selectedCode) || (selectedName && country.name === selectedName);
+    ctx.fillStyle = selected ? '#5c61a6' : '#263c6a'; ctx.fill('evenodd');
   }));
   // The sphere's default UV origin is 90° west of our longitude convention.
   const texture = new THREE.CanvasTexture(canvas);
@@ -204,13 +208,17 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
     controls.minDistance = 1.65; controls.maxDistance = 5.8; controls.rotateSpeed = 0.5; controls.zoomSpeed = 0.65;
     controls.autoRotateSpeed = 0.35;
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const globe = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), new THREE.MeshPhongMaterial({ color: 0x9fd9da, emissive: 0x062633, emissiveIntensity: 0.7, shininess: 12 }));
-    scene.add(globe, new THREE.AmbientLight(0x9abccf, 1.5));
-    const sunlight = new THREE.DirectionalLight(0xb5f5eb, 2.2); sunlight.position.set(3, 2, 4); scene.add(sunlight);
-    const rimlight = new THREE.DirectionalLight(0x2565be, 2); rimlight.position.set(-3, 1, -2); scene.add(rimlight);
+    const overviewDistance = 3.65;
+    const globe = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), new THREE.MeshPhongMaterial({ color: 0xb8c7ff, emissive: 0x080e25, emissiveIntensity: 0.24, shininess: 10, specular: 0x11233e }));
+    scene.add(globe, new THREE.AmbientLight(0x9aa7d7, 0.85));
+    // A consistent, soft studio key keeps the sphere's depth visible on either hemisphere.
+    const keyOffset = new THREE.Vector3(-3.4, 2.4, 3.8);
+    const rimOffset = new THREE.Vector3(3.2, 0.5, -2);
+    const sunlight = new THREE.DirectionalLight(0xd7e1ff, 2.4); scene.add(sunlight);
+    const rimlight = new THREE.DirectionalLight(0x5b4ecc, 1.6); scene.add(rimlight);
     const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1.06, 64, 48), new THREE.ShaderMaterial({
       vertexShader: 'varying vec3 vNormal;varying vec3 vPosition;void main(){vNormal=normalize(normalMatrix*normal);vec4 p=modelViewMatrix*vec4(position,1.0);vPosition=p.xyz;gl_Position=projectionMatrix*p;}',
-      fragmentShader: 'varying vec3 vNormal;varying vec3 vPosition;void main(){float edge=1.0-max(0.0,dot(normalize(vNormal),normalize(-vPosition)));float intensity=pow(edge,4.5);gl_FragColor=vec4(0.12,0.69,0.83,intensity*0.52);}',
+      fragmentShader: 'varying vec3 vNormal;varying vec3 vPosition;void main(){float edge=1.0-max(0.0,dot(normalize(vNormal),normalize(-vPosition)));float intensity=pow(edge,4.5);gl_FragColor=vec4(0.30,0.42,1.0,intensity*0.46);}',
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.FrontSide,
     })); scene.add(atmosphere);
     const gridPositions: number[] = [];
@@ -220,18 +228,41 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
     for (let lng = -180; lng < 180; lng += 30) for (let lat = -90; lat < 90; lat += 3) {
       const a = spherePosition(lat, lng, 1.001); const b = spherePosition(lat + 3, lng, 1.001); gridPositions.push(...a.toArray(), ...b.toArray());
     }
-    scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(gridPositions, 3)), new THREE.LineBasicMaterial({ color: 0x33838a, transparent: true, opacity: 0.13 })));
+    scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(gridPositions, 3)), new THREE.LineBasicMaterial({ color: 0x405899, transparent: true, opacity: 0.13 })));
     const starPositions: number[] = [];
     for (let i = 0; i < 650; i++) {
       const u = ((i * 0.61803398875) % 1) * 2 - 1; const angle = i * 2.399963;
       starPositions.push(Math.sqrt(1 - u * u) * Math.cos(angle) * 14, u * 14, Math.sqrt(1 - u * u) * Math.sin(angle) * 14);
     }
-    scene.add(new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3)), new THREE.PointsMaterial({ color: 0x8ea9bf, size: 0.014, transparent: true, opacity: 0.6, sizeAttenuation: true })));
+    scene.add(new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3)), new THREE.PointsMaterial({ color: 0x9aa4d2, size: 0.014, transparent: true, opacity: 0.6, sizeAttenuation: true })));
     const pins = new THREE.Group(); scene.add(pins);
     let pinEvents: HistoryEvent[] = []; let pinRings: THREE.InstancedMesh | null = null;
     let geoCountries: GeoCountry[] = []; let selectedBorder: THREE.LineSegments | null = null; let mapTexture: THREE.Texture | null = null; let countryBorders: THREE.LineSegments | null = null; let displayedMapYear = current.current.mapYear || 1969;
-    const selectTerritory = (country: GeoCountry) => {
+    let flight: GlobeFlight | null = null;
+    let lastCountry: string | null | undefined; let lastTerritory: string | null | undefined; let lastEvent: string | null | undefined;
+    let paintedSelection = '';
+    const selectionKey = () => JSON.stringify([current.current.selectedCountry, current.current.selectedTerritory || null]);
+    const beginFlight = (destination: THREE.Vector3) => {
+      const origin = camera.position.clone();
+      // Consume residual control inertia without rendering its intermediate pose.
+      controls.autoRotate = false;
+      controls.enableDamping = false;
+      controls.update(0);
+      camera.position.copy(origin);
+      controls.update(0);
+      controls.enableDamping = true;
+      flight = createGlobeFlight(origin, destination, performance.now(), reducedMotion);
+      setHover(null);
+    };
+    const focusPosition = (lat: number, lng: number) => spherePosition(lat, lng, Math.max(overviewDistance, camera.position.length()));
+    const cancelFlight = () => { flight = null; setHover(null); };
+    controls.addEventListener('start', cancelFlight);
+    const selectTerritory = (country: GeoCountry, point?: Coordinate) => {
       const code = country.code || null;
+      if (!code && point) beginFlight(focusPosition(point[1], point[0]));
+      else if (code && code === current.current.selectedCountry && countryByCode[code]) {
+        const reference = countryByCode[code]; beginFlight(focusPosition(reference.lat, reference.lng));
+      }
       if (code) current.current.onCountrySelect(code);
       current.current.onTerritorySelect?.({ name: country.name, subject: country.subject || null, year: displayedMapYear, countryCode: code });
     };
@@ -244,10 +275,10 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
         if (seen.has(key)) continue; seen.add(key);
         const name = countryDisplayName(country, current.current.locale || 'zh-CN', code);
         const button = document.createElement('button'); button.type = 'button'; button.textContent = `· ${name}`;
-        button.style.cssText = 'position:absolute;display:none;transform:translate(-50%,-50%);background:transparent;border:0;padding:4px 3px;color:#c9e4e5;font:500 10px/1.1 system-ui,sans-serif;letter-spacing:.02em;text-shadow:0 1px 3px #00131f,0 0 7px #00131f,0 0 12px #00131f;max-width:120px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;pointer-events:auto;cursor:pointer';
+        button.style.cssText = 'position:absolute;display:none;transform:translate(-50%,-50%);background:transparent;border:0;padding:4px 3px;color:#d4ddff;font:500 10px/1.1 system-ui,sans-serif;letter-spacing:.02em;text-shadow:0 1px 3px #060b22,0 0 7px #060b22,0 0 12px #060b22;max-width:120px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;pointer-events:auto;cursor:pointer';
         button.title = territoryDescription(country, displayedMapYear, current.current.locale || 'zh-CN');
         button.setAttribute('aria-label', button.title);
-        button.addEventListener('click', event => { event.stopPropagation(); selectTerritory(country); });
+        button.addEventListener('click', event => { event.stopPropagation(); selectTerritory(country, [lng, lat]); });
         labelLayer.appendChild(button);
         majorLabels.push({ element: button, position: spherePosition(lat, lng, 1.023), code: country.code, width: Math.min(120, name.length * (/[^\x00-\x7F]/.test(name) ? 10 : 6) + 14) });
       }
@@ -258,7 +289,6 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
       setHover(null);
       updateMajorLabels();
     };
-    let flyTarget: THREE.Vector3 | null = null; let lastCountry: string | null | undefined; let lastEvent: string | null | undefined;
     const update = () => {
       if (disposed) return;
       pins.children.slice().forEach(child => { pins.remove(child); disposeObject(child); });
@@ -287,22 +317,32 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
         pins.add(dots, rings, stems); pinRings = rings;
       }
       if (selectedBorder) { scene.remove(selectedBorder); disposeObject(selectedBorder); selectedBorder = null; }
-      const selected = geoCountries.filter(country => country.code === current.current.selectedCountry);
+      const selected = geoCountries.filter(country => country.code === current.current.selectedCountry || (current.current.selectedTerritory && country.name === current.current.selectedTerritory));
       if (selected.length) {
         selectedBorder = new THREE.LineSegments(borderGeometry(selected, 1.009), new THREE.LineBasicMaterial({ color: 0xf5c58b, transparent: true, opacity: 1 })); scene.add(selectedBorder);
       }
+      if (mapTexture && paintedSelection !== selectionKey()) {
+        const previousTexture = mapTexture;
+        mapTexture = landTexture(geoCountries, current.current.selectedCountry, current.current.selectedTerritory);
+        (globe.material as THREE.MeshPhongMaterial).map = mapTexture;
+        previousTexture.dispose(); paintedSelection = selectionKey();
+      }
       if (lastCountry !== current.current.selectedCountry && current.current.selectedCountry) {
         const country = countryByCode[current.current.selectedCountry];
-        if (country) flyTarget = spherePosition(country.lat, country.lng, Math.max(2.8, camera.position.length()));
+        if (country) beginFlight(focusPosition(country.lat, country.lng));
+      } else if (!current.current.selectedCountry && !current.current.selectedTerritory && (lastCountry || lastTerritory)) {
+        // Leave the user on the hemisphere they were exploring when returning to the world view.
+        beginFlight(camera.position.clone().normalize().multiplyScalar(Math.max(overviewDistance, camera.position.length())));
       }
       if (lastEvent !== current.current.activeEventId && current.current.activeEventId) {
         const event = current.current.events.find(item => item.id === current.current.activeEventId);
-        if (event?.countryCodes.length && Number.isFinite(event.lat) && Number.isFinite(event.lng)) flyTarget = spherePosition(event.lat, event.lng, Math.max(2.8, camera.position.length()));
+        if (event?.countryCodes.length && Number.isFinite(event.lat) && Number.isFinite(event.lng)) beginFlight(focusPosition(event.lat, event.lng));
       }
       lastCountry = current.current.selectedCountry;
+      lastTerritory = current.current.selectedTerritory;
       lastEvent = current.current.activeEventId;
     };
-    const reset = () => { flyTarget = spherePosition(25, 90, 3.65); };
+    const reset = () => { beginFlight(spherePosition(25, 90, overviewDistance)); };
     let mapAbort: AbortController | undefined; let activeMapFile = ''; let modernReady = false; let pendingMap: { year: number; historical: boolean } | null = null;
     const loadMap = (year: number, historical: boolean, fallback = false) => {
       // A small local modern map is displayed first, so historical loading never leaves an empty globe.
@@ -327,9 +367,9 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
           polygons: feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates as Polygon] : feature.geometry.coordinates as Polygon[],
         })) : decodeTopology(data as Topology);
         displayedMapYear = historical ? getMapEra(year).year : new Date().getFullYear();
-        mapTexture?.dispose(); mapTexture = landTexture(geoCountries); (globe.material as THREE.MeshPhongMaterial).map = mapTexture; globe.material.needsUpdate = true;
+        mapTexture?.dispose(); mapTexture = landTexture(geoCountries, current.current.selectedCountry, current.current.selectedTerritory); paintedSelection = selectionKey(); (globe.material as THREE.MeshPhongMaterial).map = mapTexture; globe.material.needsUpdate = true;
         if (countryBorders) { scene.remove(countryBorders); disposeObject(countryBorders); }
-        countryBorders = new THREE.LineSegments(borderGeometry(geoCountries), new THREE.LineBasicMaterial({ color: 0x69c5c3, transparent: true, opacity: 0.47 })); scene.add(countryBorders);
+        countryBorders = new THREE.LineSegments(borderGeometry(geoCountries), new THREE.LineBasicMaterial({ color: 0x7197e9, transparent: true, opacity: 0.47 })); scene.add(countryBorders);
         update(); updateMajorLabels(); setReady(true);
         if (!fallback) setMapWarning(null);
         if (!historical) {
@@ -351,8 +391,8 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
     };
     sceneApi.current = { update, reset, loadMap, refreshLocale };
     loadMap(current.current.mapYear || 1969, current.current.historicalBorders !== false);
-    const raycaster = new THREE.Raycaster(); const pointer = new THREE.Vector2(); let down = { x: 0, y: 0 };
-    const hitTest = (event: PointerEvent): { kind: 'event'; event: HistoryEvent } | { kind: 'country'; country: GeoCountry } | null => {
+    const raycaster = new THREE.Raycaster(); const pointer = new THREE.Vector2(); const gesture = new GlobePointerGesture();
+    const hitTest = (event: PointerEvent): { kind: 'event'; event: HistoryEvent } | { kind: 'country'; country: GeoCountry; point: Coordinate } | null => {
       const rect = renderer.domElement.getBoundingClientRect(); pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
       raycaster.setFromCamera(pointer, camera);
       const globeHit = raycaster.intersectObject(globe)[0];
@@ -362,34 +402,47 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
       const normal = globeHit.point.clone().normalize();
       const point: Coordinate = [Math.atan2(normal.x, normal.z) * 180 / Math.PI, Math.asin(normal.y) * 180 / Math.PI];
       const country = geoCountries.find(item => insideCountry(point, item));
-      return country ? { kind: 'country', country } : null;
+      return country ? { kind: 'country', country, point } : null;
     };
-    const pointerDown = (event: PointerEvent) => { down = { x: event.clientX, y: event.clientY }; flyTarget = null; };
+    const pointerDown = (event: PointerEvent) => { gesture.down(event.pointerId,event.clientX,event.clientY); cancelFlight(); };
     const pointerMove = (event: PointerEvent) => {
-      if (event.buttons) { setHover(null); return; }
+      gesture.move(event.pointerId,event.clientX,event.clientY);
+      if (event.buttons || gesture.active) { setHover(null); return; }
       const hit = hitTest(event); renderer.domElement.style.cursor = hit ? 'pointer' : 'grab';
       const rect = host.getBoundingClientRect();
       setHover(hit ? { text: hit.kind === 'event' ? hit.event.title : territoryDescription(hit.country, displayedMapYear, current.current.locale || 'zh-CN'), x: event.clientX - rect.left, y: event.clientY - rect.top } : null);
     };
     const pointerUp = (event: PointerEvent) => {
-      if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 6) return;
+      if (!gesture.up(event.pointerId,event.clientX,event.clientY)) return;
       const hit = hitTest(event);
       if (hit?.kind === 'event') current.current.onEventSelect(hit.event);
-      else if (hit?.kind === 'country') selectTerritory(hit.country);
+      else if (hit?.kind === 'country') selectTerritory(hit.country, hit.point);
     };
     const pointerLeave = () => setHover(null);
-    renderer.domElement.addEventListener('pointerdown', pointerDown); renderer.domElement.addEventListener('pointermove', pointerMove); renderer.domElement.addEventListener('pointerup', pointerUp); renderer.domElement.addEventListener('pointerleave', pointerLeave);
+    const pointerCancel = (event: PointerEvent) => { gesture.cancel(event.pointerId); setHover(null); };
+    renderer.domElement.addEventListener('pointerdown', pointerDown); renderer.domElement.addEventListener('pointermove', pointerMove); renderer.domElement.addEventListener('pointerup', pointerUp); renderer.domElement.addEventListener('pointerleave', pointerLeave); renderer.domElement.addEventListener('pointercancel', pointerCancel);
     const contextLost = (event: Event) => { event.preventDefault(); setFailed(true); };
     renderer.domElement.addEventListener('webglcontextlost', contextLost);
     const resize = () => { const width = host.clientWidth; const height = host.clientHeight; if (!width || !height) return; renderer.setSize(width, height, false); camera.aspect = width / height; camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(36) / 2) / Math.min(1, camera.aspect))); camera.updateProjectionMatrix(); };
     const observer = new ResizeObserver(resize); observer.observe(host); resize(); update();
-    const render = () => {
+    let previousFrame = performance.now();
+    const render = (now: number) => {
       animation = requestAnimationFrame(render);
+      const delta = Math.max(0, Math.min((now - previousFrame) / 1000, 0.05)); previousFrame = now;
       if (document.hidden) return;
-      controls.autoRotate = !reducedMotion && !!current.current.autoRotate && !current.current.selectedCountry && !flyTarget;
-      if (flyTarget) { camera.position.lerp(flyTarget, reducedMotion ? 1 : 0.055); if (camera.position.distanceTo(flyTarget) < 0.005) flyTarget = null; }
-      if (pinRings && !reducedMotion) (pinRings.material as THREE.MeshBasicMaterial).opacity = 0.61 + Math.sin(performance.now() * 0.0018) * 0.1;
-      controls.update(); renderer.render(scene, camera);
+      controls.autoRotate = !reducedMotion && !!current.current.autoRotate && !current.current.selectedCountry && !current.current.selectedTerritory && !flight;
+      if (flight) {
+        const sample = sampleGlobeFlight(flight, now);
+        camera.position.copy(sample.position); camera.lookAt(controls.target);
+        if (sample.done) { flight = null; controls.update(0); }
+      } else {
+        controls.dampingFactor = 1 - Math.pow(0.93, delta * 60);
+        controls.update(delta);
+      }
+      sunlight.position.copy(keyOffset).applyQuaternion(camera.quaternion);
+      rimlight.position.copy(rimOffset).applyQuaternion(camera.quaternion);
+      if (pinRings && !reducedMotion) (pinRings.material as THREE.MeshBasicMaterial).opacity = 0.61 + Math.sin(now * 0.0018) * 0.1;
+      renderer.render(scene, camera);
       const occupied: { x: number; y: number; width: number }[] = []; const width = host.clientWidth; const height = host.clientHeight; const maximum = width < 440 ? 6 : width < 650 ? 9 : 13;
       for (const label of majorLabels) {
         const screen = label.position.clone().project(camera); const x = (screen.x * 0.5 + 0.5) * width; const y = (-screen.y * 0.5 + 0.5) * height;
@@ -397,25 +450,25 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
         const overlaps = occupied.some(previous => Math.abs(previous.x - x) < (previous.width + label.width) / 2 + 9 && Math.abs(previous.y - y) < 22);
         const visible = !occluded && !overlaps && occupied.length < maximum && screen.z < 1 && x > label.width / 2 + 6 && x < width - label.width / 2 - 6 && y > 16 && y < height - 16;
         label.element.style.display = visible ? 'block' : 'none';
-        if (visible) { label.element.style.left = `${x}px`; label.element.style.top = `${y}px`; label.element.style.color = current.current.selectedCountry === label.code ? '#ffcc96' : '#d0e8e8'; occupied.push({ x, y, width: label.width }); }
+        if (visible) { label.element.style.left = `${x}px`; label.element.style.top = `${y}px`; label.element.style.color = current.current.selectedCountry === label.code ? '#ffcc96' : '#dce3ff'; occupied.push({ x, y, width: label.width }); }
       }
-    }; render();
+    }; render(performance.now());
     return () => {
-      disposed = true; mapAbort?.abort(); cancelAnimationFrame(animation); observer.disconnect(); controls.dispose(); sceneApi.current = null;
-      renderer.domElement.removeEventListener('pointerdown', pointerDown); renderer.domElement.removeEventListener('pointermove', pointerMove); renderer.domElement.removeEventListener('pointerup', pointerUp); renderer.domElement.removeEventListener('pointerleave', pointerLeave); renderer.domElement.removeEventListener('webglcontextlost', contextLost);
+      disposed = true; mapAbort?.abort(); cancelAnimationFrame(animation); observer.disconnect(); controls.removeEventListener('start', cancelFlight); controls.dispose(); sceneApi.current = null;
+      renderer.domElement.removeEventListener('pointerdown', pointerDown); renderer.domElement.removeEventListener('pointermove', pointerMove); renderer.domElement.removeEventListener('pointerup', pointerUp); renderer.domElement.removeEventListener('pointerleave', pointerLeave); renderer.domElement.removeEventListener('pointercancel', pointerCancel); renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       disposeObject(scene); mapTexture?.dispose(); renderer.dispose(); renderer.domElement.remove(); labelLayer.remove();
     };
   }, []);
 
-  useEffect(() => { sceneApi.current?.update(); setHover(null); }, [props.events, props.selectedCountry, props.activeEventId]);
+  useEffect(() => { sceneApi.current?.update(); setHover(null); }, [props.events, props.selectedCountry, props.selectedTerritory, props.activeEventId]);
   useEffect(() => { if (props.resetToken) sceneApi.current?.reset(); }, [props.resetToken]);
   useEffect(() => { sceneApi.current?.loadMap(props.mapYear || 1969, props.historicalBorders !== false); }, [props.mapYear, props.historicalBorders]);
   useEffect(() => { sceneApi.current?.refreshLocale(); }, [props.locale]);
 
   return <div ref={hostRef} className="history-globe" style={{ position: 'absolute', inset: 0 }}>
-    {!ready && !failed && !mapWarning && <div role="status" style={{ position: 'absolute', zIndex: 3, left: '50%', top: '50%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: 8, color: '#9bc7c4', background: '#081c2add', border: '1px solid #4b777733', padding: '10px 14px', borderRadius: 20, whiteSpace: 'nowrap', fontSize: 11, pointerEvents: 'none' }}><LoaderCircle size={14} className="spin" /><span>{text.loading}</span></div>}
-    {mapWarning && !failed && <div role="status" style={{ position: 'absolute', left: '12%', right: '12%', bottom: 80, color: '#e9be83', fontSize: 11, lineHeight: 1.7, textAlign: 'center', padding: '8px 12px', background: '#15222ce8', border: '1px solid #69553b', borderRadius: 6, pointerEvents: 'none' }}>{text[mapWarning]}</div>}
-    {failed && <div role="status" style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', padding: 32, color: '#b5ccd2', background: 'radial-gradient(circle, #103747, transparent 65%)' }}><span style={{ fontSize: 64 }}>◎</span><p>{text.webglUnavailable}</p><p style={{ fontSize: 12, color: '#7898a4' }}>{text.fallback}</p></div>}
-    {hover && !failed && <div style={{ position: 'absolute', zIndex: 3, left: Math.max(12, Math.min(hover.x + 15, (hostRef.current?.clientWidth || 600) - 260)), top: Math.max(hover.y - 40, 12), padding: '9px 13px', borderRadius: 7, border: '1px solid #36515d', color: '#e3efee', background: '#10212eec', fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-line', maxWidth: 230, pointerEvents: 'none', boxShadow: '0 8px 32px #0005' }}>{hover.text}</div>}
+    {!ready && !failed && !mapWarning && <div role="status" style={{ position: 'absolute', zIndex: 3, left: '50%', top: '50%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: 8, color: '#abbcff', background: '#0b102add', border: '1px solid #667bbd33', padding: '10px 14px', borderRadius: 20, whiteSpace: 'nowrap', fontSize: 11, pointerEvents: 'none' }}><LoaderCircle size={14} className="spin" /><span>{text.loading}</span></div>}
+    {mapWarning && !failed && <div role="status" style={{ position: 'absolute', left: '12%', right: '12%', bottom: 80, color: '#e9be83', fontSize: 11, lineHeight: 1.7, textAlign: 'center', padding: '8px 12px', background: '#141a32e8', border: '1px solid #69553b', borderRadius: 6, pointerEvents: 'none' }}>{text[mapWarning]}</div>}
+    {failed && <div role="status" style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', padding: 32, color: '#c3ceee', background: 'radial-gradient(circle, #19264b, transparent 65%)' }}><span style={{ fontSize: 64 }}>◎</span><p>{text.webglUnavailable}</p><p style={{ fontSize: 12, color: '#8b96bb' }}>{text.fallback}</p></div>}
+    {hover && !failed && <div style={{ position: 'absolute', zIndex: 3, left: Math.max(12, Math.min(hover.x + 15, (hostRef.current?.clientWidth || 600) - 260)), top: Math.max(hover.y - 40, 12), padding: '9px 13px', borderRadius: 7, border: '1px solid #3d4a79', color: '#e5eaff', background: '#121932ec', fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-line', maxWidth: 230, pointerEvents: 'none', boxShadow: '0 8px 32px #0005' }}>{hover.text}</div>}
   </div>;
 }

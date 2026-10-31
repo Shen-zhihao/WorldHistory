@@ -25,7 +25,7 @@ const categories: {
 }[] = [{
   id: "politics",
   name: "政治与国际",
-  color: "#9de4d1"
+  color: "#94b4ff"
 }, {
   id: "conflict",
   name: "战争与冲突",
@@ -37,7 +37,7 @@ const categories: {
 }, {
   id: "economy",
   name: "经济与发展",
-  color: "#e4d29b"
+  color: "#d8b7ff"
 }, {
   id: "culture",
   name: "文化与艺术",
@@ -45,7 +45,7 @@ const categories: {
 }, {
   id: "society",
   name: "社会与变革",
-  color: "#9acddc"
+  color: "#b1a3ef"
 }, {
   id: "disaster",
   name: "灾难与环境",
@@ -412,7 +412,7 @@ export default function HistoryAtlas({
                 setTerritory(null);
               }}>{t("当代地图")}</button></div></div>
         <div className="year-watermark" aria-hidden="true">{month.slice(0, 4)}<span>{month.slice(5, 7)}</span></div>
-        <div className="globe-canvas"><HistoryGlobe events={visibleMapEvents} selectedCountry={selectedCountry} onCountrySelect={selectCountry} locale={locale} onEventSelect={setActiveEvent} onTerritorySelect={value => {
+        <div className="globe-canvas"><HistoryGlobe events={visibleMapEvents} selectedCountry={selectedCountry} selectedTerritory={territory?.name ?? null} onCountrySelect={selectCountry} locale={locale} onEventSelect={setActiveEvent} onTerritorySelect={value => {
               setTerritory(value);
               if (!value.countryCode) {
                 setSelectedCountry(null);
