@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { countryByCode, countryByNumeric } from '@/lib/countries';
 import { getMapEra } from '@/lib/map-eras';
 import type { HistoryEvent } from '@/lib/types';
+import type { Locale } from '@/lib/locale';
 
 type Coordinate = [number, number];
 type Polygon = Coordinate[][];
@@ -24,6 +25,7 @@ export interface HistoryGlobeProps {
   resetToken?: number;
   mapYear?: number;
   historicalBorders?: boolean;
+  locale?: Locale;
   onTerritorySelect?: (territory: { name: string; subject: string | null; year: number; countryCode: string | null }) => void;
 }
 
@@ -45,6 +47,47 @@ const majorAnchors: [string, number, number][] = [
   ['IN', 24, 78], ['BR', -15, -48], ['AU', -25, 135], ['CA', 47, -72], ['TR', 39, 33], ['DE', 52, 13],
   ['EG', 27, 30], ['ZA', -30, 25], ['IT', 43, 12], ['MX', 20, -100], ['ES', 40, -4], ['ID', -3, 117],
 ];
+
+const globeText = {
+  'zh-CN': {
+    canvas: '可拖动、缩放的世界地球仪，点击国家查看历史事件',
+    labels: '地球主要国家与历史政权',
+    loading: '正在展开世界地图…',
+    historicalMapUnavailable: '历史地图暂时无法加载，当前回退显示现代国界。',
+    mapUnavailable: '地图资源加载失败，请刷新重试；仍可使用国家筛选和时间轴。',
+    webglUnavailable: '当前设备无法显示 3D 地球',
+    fallback: '仍可使用国家筛选与时间轴探索全部事件',
+    historicalEntity: '查看历史政权信息与事件',
+    contemporary: '当代国界',
+  },
+  en: {
+    canvas: 'Interactive world globe. Drag to rotate, scroll to zoom, and select a country to explore its history.',
+    labels: 'Major countries and historical territories',
+    loading: 'Unfolding the world map…',
+    historicalMapUnavailable: 'The historical map could not load. Showing contemporary borders instead.',
+    mapUnavailable: 'Map assets could not load. Refresh to retry, or explore events with the country filters and timeline.',
+    webglUnavailable: 'This device cannot display the 3D globe',
+    fallback: 'You can still explore every event using the country filters and timeline.',
+    historicalEntity: 'Explore this historical territory and its events',
+    contemporary: 'Contemporary borders',
+  },
+} as const;
+
+function countryDisplayName(country: GeoCountry, locale: Locale, fallbackCode?: string) {
+  if (country.historical) return locale === 'zh-CN' ? historicalNames[country.name] || country.name : country.name;
+  const reference = countryByCode[country.code || fallbackCode || ''];
+  return (locale === 'zh-CN' ? reference?.name : reference?.nameEn) || country.name;
+}
+
+function territoryDescription(country: GeoCountry, year: number, locale: Locale) {
+  const name = countryDisplayName(country, locale);
+  const subject = country.subject && country.subject !== country.name ? (locale === 'zh-CN' ? historicalNames[country.subject] || country.subject : country.subject) : null;
+  const reference = countryByCode[country.code];
+  const filterName = (locale === 'zh-CN' ? reference?.name : reference?.nameEn) || country.code;
+  const mapDate = country.historical ? (locale === 'zh-CN' ? `${year} 年边界快照` : `${year} border snapshot`) : globeText[locale].contemporary;
+  const action = country.code ? (locale === 'zh-CN' ? `以现代 ${filterName} 筛选事件` : `Filter events using present-day ${filterName}`) : globeText[locale].historicalEntity;
+  return `${name}${subject ? ` · ${subject}` : ''}\n${mapDate}\n${action}`;
+}
 
 function spherePosition(lat: number, lng: number, radius = 1) {
   const phi = lat * Math.PI / 180;
@@ -127,13 +170,15 @@ function disposeObject(object: THREE.Object3D) {
 }
 
 export default function HistoryGlobe(props: HistoryGlobeProps) {
+  const locale = props.locale || 'zh-CN';
+  const text = globeText[locale];
   const hostRef = useRef<HTMLDivElement>(null);
   const current = useRef(props); current.current = props;
-  const sceneApi = useRef<{ update: () => void; reset: () => void; loadMap: (year: number, historical: boolean) => void } | null>(null);
+  const sceneApi = useRef<{ update: () => void; reset: () => void; loadMap: (year: number, historical: boolean) => void; refreshLocale: () => void } | null>(null);
   const [hover, setHover] = useState<{ text: string; x: number; y: number } | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [mapWarning, setMapWarning] = useState<string | null>(null);
+  const [mapWarning, setMapWarning] = useState<'historicalMapUnavailable' | 'mapUnavailable' | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -144,12 +189,12 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.8));
     renderer.setClearColor(0x000000, 0); renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;outline:none';
-    renderer.domElement.setAttribute('aria-label', '可拖动、缩放的世界地球仪，点击国家查看历史事件');
+    renderer.domElement.setAttribute('aria-label', globeText[current.current.locale || 'zh-CN'].canvas);
     renderer.domElement.setAttribute('role', 'img');
     host.appendChild(renderer.domElement);
     const labelLayer = document.createElement('div');
     labelLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2';
-    labelLayer.setAttribute('aria-label', '地球主要国家与历史政权'); host.appendChild(labelLayer);
+    labelLayer.setAttribute('aria-label', globeText[current.current.locale || 'zh-CN'].labels); host.appendChild(labelLayer);
     let majorLabels: { element: HTMLButtonElement; position: THREE.Vector3; code: string; width: number }[] = [];
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
@@ -197,15 +242,21 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
         if (!country) continue;
         const key = country.historical ? `${country.name}|${country.subject || ''}` : code;
         if (seen.has(key)) continue; seen.add(key);
-        const name = country.historical ? historicalNames[country.name] || country.name : countryByCode[code]?.name || country.name;
+        const name = countryDisplayName(country, current.current.locale || 'zh-CN', code);
         const button = document.createElement('button'); button.type = 'button'; button.textContent = `· ${name}`;
         button.style.cssText = 'position:absolute;display:none;transform:translate(-50%,-50%);background:transparent;border:0;padding:4px 3px;color:#c9e4e5;font:500 10px/1.1 system-ui,sans-serif;letter-spacing:.02em;text-shadow:0 1px 3px #00131f,0 0 7px #00131f,0 0 12px #00131f;max-width:120px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;pointer-events:auto;cursor:pointer';
-        button.title = `${country.name}${country.subject ? ` · ${country.subject}` : ''} · ${displayedMapYear} 年边界快照${country.code ? `；以现代 ${countryByCode[country.code]?.name || country.code} 筛选事件` : '；查看历史政权信息与事件'}`;
+        button.title = territoryDescription(country, displayedMapYear, current.current.locale || 'zh-CN');
         button.setAttribute('aria-label', button.title);
         button.addEventListener('click', event => { event.stopPropagation(); selectTerritory(country); });
         labelLayer.appendChild(button);
         majorLabels.push({ element: button, position: spherePosition(lat, lng, 1.023), code: country.code, width: Math.min(120, name.length * (/[^\x00-\x7F]/.test(name) ? 10 : 6) + 14) });
       }
+    };
+    const refreshLocale = () => {
+      renderer.domElement.setAttribute('aria-label', globeText[current.current.locale || 'zh-CN'].canvas);
+      labelLayer.setAttribute('aria-label', globeText[current.current.locale || 'zh-CN'].labels);
+      setHover(null);
+      updateMajorLabels();
     };
     let flyTarget: THREE.Vector3 | null = null; let lastCountry: string | null | undefined; let lastEvent: string | null | undefined;
     const update = () => {
@@ -290,15 +341,15 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
         if (error.name === 'AbortError' || disposed || activeMapFile !== file) return;
         activeMapFile = '';
         if (historical) {
-          setMapWarning('历史地图暂时无法加载，当前回退显示现代国界。');
+          setMapWarning('historicalMapUnavailable');
           loadMap(year, false, true);
         } else {
           setReady(geoCountries.length > 0);
-          setMapWarning('地图资源加载失败，请刷新重试；仍可使用国家筛选和时间轴。');
+          setMapWarning('mapUnavailable');
         }
       });
     };
-    sceneApi.current = { update, reset, loadMap };
+    sceneApi.current = { update, reset, loadMap, refreshLocale };
     loadMap(current.current.mapYear || 1969, current.current.historicalBorders !== false);
     const raycaster = new THREE.Raycaster(); const pointer = new THREE.Vector2(); let down = { x: 0, y: 0 };
     const hitTest = (event: PointerEvent): { kind: 'event'; event: HistoryEvent } | { kind: 'country'; country: GeoCountry } | null => {
@@ -318,7 +369,7 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
       if (event.buttons) { setHover(null); return; }
       const hit = hitTest(event); renderer.domElement.style.cursor = hit ? 'pointer' : 'grab';
       const rect = host.getBoundingClientRect();
-      setHover(hit ? { text: hit.kind === 'event' ? hit.event.title : hit.country.historical ? `${historicalNames[hit.country.name] || hit.country.name}\n${hit.country.subject ? `${hit.country.subject} · ` : ''}${displayedMapYear} 年边界快照${hit.country.code ? `\n现代筛选：${countryByCode[hit.country.code]?.name || hit.country.code}` : '\n点击查看历史政权'}` : (countryByCode[hit.country.code]?.name || hit.country.name), x: event.clientX - rect.left, y: event.clientY - rect.top } : null);
+      setHover(hit ? { text: hit.kind === 'event' ? hit.event.title : territoryDescription(hit.country, displayedMapYear, current.current.locale || 'zh-CN'), x: event.clientX - rect.left, y: event.clientY - rect.top } : null);
     };
     const pointerUp = (event: PointerEvent) => {
       if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 6) return;
@@ -356,14 +407,15 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
     };
   }, []);
 
-  useEffect(() => { sceneApi.current?.update(); }, [props.events, props.selectedCountry, props.activeEventId]);
+  useEffect(() => { sceneApi.current?.update(); setHover(null); }, [props.events, props.selectedCountry, props.activeEventId]);
   useEffect(() => { if (props.resetToken) sceneApi.current?.reset(); }, [props.resetToken]);
   useEffect(() => { sceneApi.current?.loadMap(props.mapYear || 1969, props.historicalBorders !== false); }, [props.mapYear, props.historicalBorders]);
+  useEffect(() => { sceneApi.current?.refreshLocale(); }, [props.locale]);
 
   return <div ref={hostRef} className="history-globe" style={{ position: 'absolute', inset: 0 }}>
-    {!ready && !failed && !mapWarning && <div role="status" style={{ position: 'absolute', zIndex: 3, left: '50%', top: '50%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: 8, color: '#9bc7c4', background: '#081c2add', border: '1px solid #4b777733', padding: '10px 14px', borderRadius: 20, whiteSpace: 'nowrap', fontSize: 11, pointerEvents: 'none' }}><LoaderCircle size={14} className="spin" /><span>正在展开世界地图…</span></div>}
-    {mapWarning && !failed && <div role="status" style={{ position: 'absolute', left: '12%', right: '12%', bottom: 80, color: '#e9be83', fontSize: 11, lineHeight: 1.7, textAlign: 'center', padding: '8px 12px', background: '#15222ce8', border: '1px solid #69553b', borderRadius: 6, pointerEvents: 'none' }}>{mapWarning}</div>}
-    {failed && <div role="status" style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', padding: 32, color: '#b5ccd2', background: 'radial-gradient(circle, #103747, transparent 65%)' }}><span style={{ fontSize: 64 }}>◎</span><p>当前设备无法显示 3D 地球</p><p style={{ fontSize: 12, color: '#7898a4' }}>仍可使用国家筛选与时间轴探索全部事件</p></div>}
+    {!ready && !failed && !mapWarning && <div role="status" style={{ position: 'absolute', zIndex: 3, left: '50%', top: '50%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: 8, color: '#9bc7c4', background: '#081c2add', border: '1px solid #4b777733', padding: '10px 14px', borderRadius: 20, whiteSpace: 'nowrap', fontSize: 11, pointerEvents: 'none' }}><LoaderCircle size={14} className="spin" /><span>{text.loading}</span></div>}
+    {mapWarning && !failed && <div role="status" style={{ position: 'absolute', left: '12%', right: '12%', bottom: 80, color: '#e9be83', fontSize: 11, lineHeight: 1.7, textAlign: 'center', padding: '8px 12px', background: '#15222ce8', border: '1px solid #69553b', borderRadius: 6, pointerEvents: 'none' }}>{text[mapWarning]}</div>}
+    {failed && <div role="status" style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', padding: 32, color: '#b5ccd2', background: 'radial-gradient(circle, #103747, transparent 65%)' }}><span style={{ fontSize: 64 }}>◎</span><p>{text.webglUnavailable}</p><p style={{ fontSize: 12, color: '#7898a4' }}>{text.fallback}</p></div>}
     {hover && !failed && <div style={{ position: 'absolute', zIndex: 3, left: Math.max(12, Math.min(hover.x + 15, (hostRef.current?.clientWidth || 600) - 260)), top: Math.max(hover.y - 40, 12), padding: '9px 13px', borderRadius: 7, border: '1px solid #36515d', color: '#e3efee', background: '#10212eec', fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-line', maxWidth: 230, pointerEvents: 'none', boxShadow: '0 8px 32px #0005' }}>{hover.text}</div>}
   </div>;
 }

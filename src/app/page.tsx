@@ -1,8 +1,11 @@
 import HistoryAtlas from "@/components/history-atlas";
+import { cookies } from "next/headers";
+import { normalizeLocale } from "@/lib/locale";
 
 export const dynamic = "force-dynamic";
 
-export default function Home() {
+export default async function Home() {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  return <HistoryAtlas today={today} />;
+  const initialLocale = normalizeLocale((await cookies()).get("epoch-locale")?.value);
+  return <HistoryAtlas today={today} initialLocale={initialLocale} />;
 }

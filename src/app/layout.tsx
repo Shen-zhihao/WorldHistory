@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { normalizeLocale } from "@/lib/locale";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -7,6 +9,7 @@ export const metadata: Metadata = {
   applicationName: "纪元 EPOCH",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-CN"><body>{children}</body></html>;
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const locale = normalizeLocale((await cookies()).get("epoch-locale")?.value);
+  return <html lang={locale}><body>{children}</body></html>;
 }

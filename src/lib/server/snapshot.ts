@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { seedSnapshot, todayShanghai } from "./db";
+import { allTranslations, seedSnapshot, todayShanghai } from "./db";
 
 export interface DataManifest {
   schemaVersion: number;
@@ -11,6 +11,7 @@ export interface DataManifest {
   selectedEvents: number;
   archiveRecords: number;
   months: number;
+  translations?: number;
   files: { path: string; bytes: number; sha256: string }[];
 }
 
@@ -22,7 +23,11 @@ export async function writeSnapshot() {
   const temporary = `${target}.tmp-${process.pid}`;
   await writeFile(temporary, gzipSync(JSON.stringify(snapshot), { level: 9 }));
   await rename(temporary, target);
-  const paths = ["data/events.json.gz", "data/supplemental-events.json.gz", "public/geo/countries-110m.json"];
+  const translated = allTranslations();
+  const translationTarget = join(process.cwd(), "data", "translations.json.gz");
+  await writeFile(`${translationTarget}.tmp-${process.pid}`, gzipSync(JSON.stringify(translated), { level: 9 }));
+  await rename(`${translationTarget}.tmp-${process.pid}`, translationTarget);
+  const paths = ["data/translations.json.gz", "data/events.json.gz", "data/supplemental-events.json.gz", "public/geo/countries-110m.json"];
   for (const directory of ["public/geo/history", "public/images/events", "public/fonts"]) {
     for (const file of await readdir(join(process.cwd(), directory))) {
       if (/\.(gz|webp|woff2|json)$/.test(file)) paths.push(`${directory}/${file}`);
@@ -34,12 +39,13 @@ export async function writeSnapshot() {
     files.push({ path, bytes: bytes.byteLength, sha256: createHash("sha256").update(bytes).digest("hex") });
   }
   const manifest: DataManifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     cutoff: todayShanghai(),
     generatedAt: new Date().toISOString(),
     selectedEvents: snapshot.events.length,
     archiveRecords: snapshot.candidates.length,
     months: snapshot.months.length,
+    translations: translated.length,
     files,
   };
   await writeFile(join(process.cwd(), "data", "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

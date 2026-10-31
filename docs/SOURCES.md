@@ -38,3 +38,12 @@ Wikipedia contributors 的文本以 [CC BY-SA 4.0](https://creativecommons.org/l
 地图跟随时间轴选择不晚于所选年份的最近快照，同时明确显示实际快照年份；例如 1850 年使用 1815 年快照，2026 年使用 2010 年快照。中间年份没有完整国界数据，不虚构逐年或逐月变动。用户可切换到独立的现代国界图层。历史名称及原始疆界精度等级被保留；跨越多个现代国家的消亡帝国不强行映射成单个现代国家。
 
 文件经过 0.12° Douglas–Peucker 简化、三位小数坐标量化、属性裁减及 gzip 压缩；14 份压缩地图共约 1.23 MB，浏览时按所需年份加载。快照是有近似和争议区域的社区重建，不能作为精确历史疆界或现实领土主张的依据。完整署名、许可证、原始文件链接及可复现转换源码见 `public/geo/history/ATTRIBUTION.md`、`LICENSE`、`prepare.py`。
+
+
+## 多语言与译文
+
+界面支持简体中文和英语。中文源文本通过本地 OpenCC 字形转换后显示，仍保留原文。不同语言的机器译文独立缓存，标注翻译服务，使用原文标题与摘要的 SHA-256 防止过期译文被错误复用；摘要本身仍保留原始来源链接和 CC BY-SA 署名。
+
+默认低量按需翻译使用 [MyMemory](https://mymemory.translated.net/doc/spec.php)，公开接口每段最多 500 UTF-8 字节，[免费匿名额度](https://mymemory.translated.net/doc/usagelimits.php)每天 5,000 字符。不会自动遍历整个档案翻译。可配置官方 [Google Cloud Translation](https://docs.cloud.google.com/translate/docs/reference/rest/v2/translate) 或 LibreTranslate；服务端密钥不会进入客户端或 Git。译文是阅读辅助，不代表原文已是中文史料，也不能替代史实核查。
+
+`data/translations.json.gz` 是随 Git 分发的已缓存译文。实时浏览生成的本地缓存需通过 `npm run data:export` 导出后提交。此导出操作本身不调用翻译服务。

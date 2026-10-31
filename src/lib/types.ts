@@ -14,6 +14,11 @@ export interface HistoryEvent {
   sourceTitle: string;
   imageUrl: string | null;
   imageCredit: string | null;
+  originalTitle?: string;
+  originalSummary?: string;
+  contentLocale?: "zh-CN" | "en";
+  translationStatus?: "original" | "translated" | "pending" | "unavailable";
+  translatedBy?: string;
 }
 export interface Country { code: string; name: string; nameEn: string; lat: number; lng: number }
 export interface AtlasStatus {

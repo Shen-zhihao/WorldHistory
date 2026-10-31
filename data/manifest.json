@@ -1,20 +1,26 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "cutoff": "2026-10-31",
-  "generatedAt": "2026-10-31T03:00:07.993Z",
+  "generatedAt": "2026-10-31T03:56:03.239Z",
   "selectedEvents": 13037,
-  "archiveRecords": 53121,
+  "archiveRecords": 53122,
   "months": 2722,
+  "translations": 14,
   "files": [
     {
       "path": "data/events.json.gz",
-      "bytes": 7262816,
-      "sha256": "304c9fee14678561734ff5f8bc78bd264cdb4b7c6c31cee2e2865f1125c5dcc0"
+      "bytes": 7262940,
+      "sha256": "6385678ecde8d1e4ef3828eb53160f1a891214dca4055a66a33826d84e2f3623"
     },
     {
       "path": "data/supplemental-events.json.gz",
       "bytes": 929312,
       "sha256": "ae48669d78f9a5e61904ec568e27be54b64575233aaae010ec3df722aa9253ad"
+    },
+    {
+      "path": "data/translations.json.gz",
+      "bytes": 3121,
+      "sha256": "1017e22d73582f6ecba3db809cdeb6380a18d50858a20b8576cfb422dc9f84d3"
     },
     {
       "path": "public/fonts/dm-sans.woff2",

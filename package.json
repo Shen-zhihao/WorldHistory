@@ -14,12 +14,15 @@
     "sync": "tsx scripts/sync.ts",
     "media": "tsx scripts/cache-media.ts",
     "data:verify": "tsx scripts/verify-data.ts",
-    "db:restore": "tsx scripts/restore.ts"
+    "db:restore": "tsx scripts/restore.ts",
+    "translate": "tsx scripts/translate.ts",
+    "data:export": "tsx scripts/export-data.ts"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
     "lucide-react": "^1.65.0",
     "next": "^16.4.3",
+    "opencc-js": "^1.4.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "sharp": "^0.35.5",
