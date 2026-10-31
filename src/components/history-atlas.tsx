@@ -2,13 +2,14 @@
 
 import dynamic from "next/dynamic";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Compass, Database, ExternalLink, Globe2, Layers3, LoaderCircle, MapPin, Maximize, Moon, Pause, Play, RotateCcw, Search, SlidersHorizontal, Sun, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Compass, Database, ExternalLink, Globe2, Layers3, LoaderCircle, Map, MapPin, Maximize, Moon, RotateCcw, Search, SlidersHorizontal, Sun, X } from "lucide-react";
 import { countries } from "@/lib/countries";
 import { getMapEra } from "@/lib/map-eras";
 import { createTranslator, countryDisplayName, formatMonth, formatHistoryDate } from "@/lib/i18n";
 import type { Locale } from "@/lib/locale";
 import type { Theme } from "@/lib/theme";
 import type { AtlasStatus, EventCategory, HistoryEvent } from "@/lib/types";
+import type { HistoryGlobeProps } from "./history-globe";
 const LocaleContext = createContext<Locale>("zh-CN");
 function GlobeLoading() {
   const locale = useContext(LocaleContext);
@@ -19,6 +20,14 @@ const HistoryGlobe = dynamic(() => import("./history-globe"), {
   ssr: false,
   loading: () => <GlobeLoading />
 });
+const HistoryFlatMap = dynamic(() => import("./history-flat-map"), {
+  ssr: false,
+  loading: () => <FlatMapLoading />
+});
+function FlatMapLoading() {
+  const t = createTranslator(useContext(LocaleContext));
+  return <div className="globe-loading" role="status"><LoaderCircle size={22} className="spin" /><span>{t("正在展开平面地图")}</span></div>;
+}
 const categories: {
   id: EventCategory;
   name: string;
@@ -153,14 +162,25 @@ export default function HistoryAtlas({
   const [infoOpen, setInfoOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
   const [autoRotate, setAutoRotate] = useState(false);
+  const [mapView, setMapView] = useState<"globe" | "flat">("globe");
+  const [flatMapOpened, setFlatMapOpened] = useState(false);
   const [historicalBorders, setHistoricalBorders] = useState(true);
-  const [playing, setPlaying] = useState(false);
   const [resetToken, setResetToken] = useState(0);
   const [refreshToken, setRefreshToken] = useState(0);
   const [toast, setToast] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const countryRef = useRef<HTMLDivElement>(null);
+  const globeViewButton = useRef<HTMLButtonElement>(null);
+  const flatViewButton = useRef<HTMLButtonElement>(null);
   const lastEventRequestKey = useRef("");
+  const switchMapView = useCallback((view: "globe" | "flat") => {
+    const focusedLayer = document.activeElement?.closest(".map-view-layer");
+    if (focusedLayer && !focusedLayer.classList.contains(view === "globe" ? "globe-view-layer" : "flat-view-layer")) {
+      requestAnimationFrame(() => (view === "globe" ? globeViewButton : flatViewButton).current?.focus());
+    }
+    if (view === "flat") setFlatMapOpened(true);
+    setMapView(view);
+  }, []);
   const navigateMonth = useCallback((index: number) => {
     setMonth(indexMonth(Math.min(lastIndex, Math.max(0, index))));
     setAllTime(false);
@@ -168,7 +188,9 @@ export default function HistoryAtlas({
     setTerritory(null);
   }, [lastIndex]);
   const selectCountry = useCallback((code: string | null) => {
+    switchMapView(code ? "flat" : "globe");
     setSelectedCountry(code);
+    setActiveEvent(null);
     setCountryOpen(false);
     setPage(1);
     setAllTime(!!code);
@@ -177,7 +199,7 @@ export default function HistoryAtlas({
     setCountryTo("");
     setTerritory(null);
     setSearchFocused(false);
-  }, []);
+  }, [switchMapView]);
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query.trim()), 320);
     return () => clearTimeout(timer);
@@ -286,22 +308,8 @@ export default function HistoryAtlas({
     return () => clearTimeout(timer);
   }, [eventTranslationPending, mapTranslationPending, detailTranslationPending, translationRefresh, locale, month, selectedCountry, category, debouncedQuery, allTime, page, monthScope, countryFrom, countryTo]);
   useEffect(() => {
-    if (!playing) return;
-    const timer = setInterval(() => {
-      setMonth(current => {
-        const next = monthIndex(current) + 1;
-        if (next > lastIndex) {
-          setPlaying(false);
-          return current;
-        }
-        return indexMonth(next);
-      });
-      setAllTime(false);
-    }, 3500);
-    return () => clearInterval(timer);
-  }, [playing, lastIndex]);
-  useEffect(() => {
     const listener = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if ((e.target as HTMLElement).matches("input,textarea,select") || !!(e.target as HTMLElement).closest("dialog")) return;
       if (e.key === "/") {
         e.preventDefault();
@@ -336,17 +344,6 @@ export default function HistoryAtlas({
   const mapEra = getMapEra(Number(month.slice(0, 4)));
   const currentCoverage = status?.coverage.find(c => c.month === month)?.count ?? 0;
   const filteredCountries = useMemo(() => countries.filter(c => `${c.name}${c.nameEn}${c.code}`.toLowerCase().includes(countryQuery.toLowerCase())), [countryQuery]);
-  const decades = useMemo(() => Array.from({
-    length: 114
-  }, (_, i) => {
-    const year = 1800 + i * 2;
-    const count = status?.coverage.filter(c => Number(c.month.slice(0, 4)) >= year && Number(c.month.slice(0, 4)) < year + 2).reduce((sum, c) => sum + c.count, 0) ?? 0;
-    return {
-      year,
-      count
-    };
-  }), [status]);
-  const maxCoverage = Math.max(...decades.map(d => d.count), 1);
   const totalCountries = countries.length;
   const countrySuggestions = query.trim() ? countries.filter(c => `${c.name}${c.nameEn}${c.code}`.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 5) : [];
   const visibleMapEvents = (allTime ? events : mapEvents).filter(event => !category || event.category === category);
@@ -369,6 +366,36 @@ export default function HistoryAtlas({
       setToast(t("当前浏览器暂不支持全屏模式"));
     }
   }
+  const mapProps: HistoryGlobeProps = {
+    events: visibleMapEvents,
+    selectedCountry,
+    selectedTerritory: territory?.name ?? null,
+    onCountrySelect: selectCountry,
+    locale,
+    theme,
+    onEventSelect: setActiveEvent,
+    onTerritorySelect: value => {
+      setTerritory(value);
+      setActiveEvent(null);
+      switchMapView("flat");
+      if (!value.countryCode) {
+        setSelectedCountry(null);
+        setCountryFrom("");
+        setCountryTo("");
+        setQuery(({
+          USSR: "Soviet", "Ottoman Empire": "Ottoman", "Austro-Hungarian Empire": "Austria",
+          "Austrian Empire": "Austria", "Kingdom of Prussia": "Prussia"
+        } as Record<string, string>)[value.name] || value.name);
+        setAllTime(true);
+        setPage(1);
+      }
+    },
+    activeEventId: activeEvent?.id ?? null,
+    mapYear: Number(month.slice(0, 4)),
+    historicalBorders,
+    autoRotate,
+    resetToken,
+  };
   return <LocaleContext.Provider value={locale}><div className="atlas-app" data-locale={locale}>
     <header className="topbar">
       <a href="/" className="brand" aria-label={t("纪元首页")}><span className="brand-mark"><Globe2 size={25} strokeWidth={1.25} /><span /></span><span className="brand-cn">{t("纪元")}<span className="brand-en">EPOCH</span></span><span className="brand-divider" /><span className="brand-subtitle">{t("世界历史地球仪")}</span></a>
@@ -414,7 +441,7 @@ export default function HistoryAtlas({
         <button className="data-indicator" onClick={() => setSyncOpen(true)}><span className={`status-dot ${status?.sync.running ? "pulsing" : ""}`} /><span>{status?.sync.running ? `${t("正在补齐历史")} · ${status.sync.processed}/${status.sync.total}` : status?.sync.error ? t("同步待重试 · 查看状态") : t("本地历史数据库")}</span><ArrowUpRight size={12} /></button>
       </aside>
 
-      <section className="globe-section" aria-label={t("交互式世界地球仪")}>
+      <section className="globe-section" data-view={mapView} aria-label={mapView === "globe" ? t("交互式世界地球仪") : t("交互式平面历史地图")}>
         <div className="globe-heading"><span className="eyebrow">{selectedCountry ? `${selectedCountry} / ${countryName(selectedCountry)}` : `EARTH / ${monthLabel(month)}`}</span><div className="map-era-control"><button className={historicalBorders ? "active" : ""} onClick={() => {
                 setHistoricalBorders(true);
                 setTerritory(null);
@@ -423,27 +450,17 @@ export default function HistoryAtlas({
                 setTerritory(null);
               }}>{t("当代地图")}</button></div></div>
         <div className="year-watermark" aria-hidden="true">{month.slice(0, 4)}<span>{month.slice(5, 7)}</span></div>
-        <div className="globe-canvas"><HistoryGlobe events={visibleMapEvents} selectedCountry={selectedCountry} selectedTerritory={territory?.name ?? null} onCountrySelect={selectCountry} locale={locale} theme={theme} onEventSelect={setActiveEvent} onTerritorySelect={value => {
-              setTerritory(value);
-              if (!value.countryCode) {
-                setSelectedCountry(null);
-                setQuery(({
-                  USSR: "Soviet",
-                  "Ottoman Empire": "Ottoman",
-                  "Austro-Hungarian Empire": "Austria",
-                  "Austrian Empire": "Austria",
-                  "Kingdom of Prussia": "Prussia"
-                } as Record<string, string>)[value.name] || value.name);
-                setAllTime(true);
-                setPage(1);
-              }
-            }} activeEventId={activeEvent?.id ?? null} mapYear={Number(month.slice(0, 4))} historicalBorders={historicalBorders} autoRotate={autoRotate} resetToken={resetToken} /></div>
+        <div className="map-view-toggle" role="group" aria-label={t("地图视图")}><button ref={globeViewButton} type="button" aria-pressed={mapView === "globe"} onClick={() => switchMapView("globe")} title={t("返回3D地球")}><Globe2 size={12} />{t("3D地球")}</button><button ref={flatViewButton} type="button" aria-pressed={mapView === "flat"} onClick={() => switchMapView("flat")}><Map size={12} />{t("2D地图")}</button></div>
+        <div className="globe-canvas">
+          <div className={`map-view-layer globe-view-layer ${mapView === "globe" ? "is-visible" : ""}`} aria-hidden={mapView !== "globe"} inert={mapView !== "globe"}><HistoryGlobe {...mapProps} active={mapView === "globe"} /></div>
+          {flatMapOpened && <div className={`map-view-layer flat-view-layer ${mapView === "flat" ? "is-visible" : ""}`} aria-hidden={mapView !== "flat"} inert={mapView !== "flat"}><HistoryFlatMap {...mapProps} active={mapView === "flat"} /></div>}
+        </div>
         <div className="globe-orbit-label"><span className="orbit-label-line" />{historicalBorders ? `${mapEra.year} ${t("年疆界重建快照")}` : t("当代地理边界")}</div>
-        <div className="map-event-legend"><span className="map-legend-dot" />{allTime ? t("历史事件") : `${monthLabel(month)} · ${t("各国要闻")}`}<span>{visibleMapEvents.length}{t(" 个标记")}</span></div>{territory && <div className="territory-card"><button className="territory-close" onClick={() => setTerritory(null)} aria-label={t("关闭版图信息")}><X size={12} /></button><span className="eyebrow">{t("TERRITORY / 版图档案")}</span><h3>{territory.name}</h3>{territory.subject && <p>{t("所属 / ")}{territory.subject}</p>}<p>{territory.year}{t(" 年重建快照 · ")}{territory.countryCode ? countryName(territory.countryCode) : t("历史政体 · 按名称搜索事件")}</p><a href={historicalBorders ? mapEra.source : "https://www.naturalearthdata.com/"} target="_blank" rel="noreferrer">{t("查看地图来源 ")}<ExternalLink size={10} /></a></div>}<div className="globe-controls"><button className={autoRotate ? "active" : ""} onClick={() => setAutoRotate(!autoRotate)} title={autoRotate ? t("暂停自转") : t("自动旋转")} aria-label={autoRotate ? t("暂停自转") : t("自动旋转")}><RotateCcw size={16} /></button><button onClick={() => {
+        <div className="map-event-legend"><span className="map-legend-dot" />{allTime ? t("历史事件") : `${monthLabel(month)} · ${t("各国要闻")}`}<span>{visibleMapEvents.length}{t(" 个标记")}</span></div>{territory && <div className="territory-card"><button className="territory-close" onClick={() => setTerritory(null)} aria-label={t("关闭版图信息")}><X size={12} /></button><span className="eyebrow">{t("TERRITORY / 版图档案")}</span><h3>{territory.name}</h3>{territory.subject && <p>{t("所属 / ")}{territory.subject}</p>}<p>{territory.year}{t(" 年重建快照 · ")}{territory.countryCode ? countryName(territory.countryCode) : t("历史政体 · 按名称搜索事件")}</p><a href={historicalBorders ? mapEra.source : "https://www.naturalearthdata.com/"} target="_blank" rel="noreferrer">{t("查看地图来源 ")}<ExternalLink size={10} /></a></div>}<div className="globe-controls">{mapView === "globe" && <><button className={autoRotate ? "active" : ""} onClick={() => setAutoRotate(!autoRotate)} title={autoRotate ? t("暂停自转") : t("自动旋转")} aria-label={autoRotate ? t("暂停自转") : t("自动旋转")}><RotateCcw size={16} /></button><button onClick={() => {
               setResetToken(v => v + 1);
               selectCountry(null);
-            }} title={t("重置地球视角")} aria-label={t("重置地球视角")}><Compass size={16} /></button><span /><button onClick={fullscreen} title={t("全屏")} aria-label={t("全屏")}><Maximize size={15} /></button></div>
-        <div className="globe-hint"><span className="mouse-icon" /><span>{t("拖动旋转")}</span><span className="hint-dot">·</span><span>{t("滚动缩放")}</span><span className="hint-dot">·</span><span>{t("点击国家探索")}</span></div>
+            }} title={t("重置地球视角")} aria-label={t("重置地球视角")}><Compass size={16} /></button><span /></>}<button onClick={fullscreen} title={t("全屏")} aria-label={t("全屏")}><Maximize size={15} /></button></div>
+        <div className="globe-hint"><span className="mouse-icon" /><span>{mapView === "globe" ? t("拖动旋转") : t("拖动平移")}</span><span className="hint-dot">·</span><span>{t("滚动缩放")}</span><span className="hint-dot">·</span><span>{mapView === "globe" ? t("点击国家展开地图") : t("点击国家探索")}</span></div>
         {selectedCountry && <button className="selected-country-pill" onClick={() => selectCountry(null)}><MapPin size={13} />{countryName(selectedCountry)}<X size={12} /></button>}
       </section>
 
@@ -479,20 +496,14 @@ export default function HistoryAtlas({
       </section>
     </main>
 
-    <footer className="timeline">
-      <div className="timeline-top"><div className="timeline-title"><span className="eyebrow">TIME EXPLORER</span><span>{t("历史时间轴")}</span></div><div className="date-navigation"><button className="icon-button" disabled={monthIndex(month) <= 0} aria-label={t("上个月")} onClick={() => navigateMonth(monthIndex(month) - 1)}><ChevronLeft size={16} /></button><label className="month-input"><input type="month" min="1800-01" max={latestMonth} value={month} aria-label={t("选择历史月份")} onInput={e => {
-                if (/^\d{4}-\d{2}$/.test(e.currentTarget.value)) navigateMonth(monthIndex(e.currentTarget.value));
-              }} onChange={e => {
-                if (/^\d{4}-\d{2}$/.test(e.target.value)) navigateMonth(monthIndex(e.target.value));
-              }} /><ChevronDown size={12} /></label><button className="icon-button" disabled={monthIndex(month) >= lastIndex} aria-label={t("下个月")} onClick={() => navigateMonth(monthIndex(month) + 1)}><ChevronRight size={16} /></button></div><button className="today-button" onClick={() => navigateMonth(lastIndex)}>{t("回到当下 ")}<ArrowUpRight size={12} /></button></div>
-      <div className="timeline-track-row"><button className={`play-button ${playing ? "playing" : ""}`} onClick={() => setPlaying(!playing)} aria-label={playing ? t("暂停时间播放") : t("播放历史时间轴")}>{playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button><div className="timeline-track"><div className="timeline-histogram" aria-hidden="true">{decades.map(d => <span key={d.year} style={{
-                height: `${8 + d.count / maxCoverage * 22}px`
-              }} className={d.year <= Number(month.slice(0, 4)) ? "past" : ""} />)}</div><div className="timeline-progress" style={{
-              width: `${monthIndex(month) / lastIndex * 100}%`
-            }} /><input type="range" min={0} max={lastIndex} value={monthIndex(month)} onChange={e => navigateMonth(Number(e.target.value))} aria-label={t("历史月份时间轴")} aria-valuetext={monthLabel(month)} /><div className="timeline-ticks">{[1800, 1850, 1900, 1950, 2000, Number(today.slice(0, 4))].map(year => <button key={year} style={{
-                left: `${Math.min((year - 1800) * 12 / lastIndex * 100, 100)}%`
-              }} onClick={() => navigateMonth(Math.min((year - 1800) * 12, lastIndex))}>{year}</button>)}</div></div></div>
-      <div className="timeline-bottom"><span>{t("过去并未远去，它构成了我们所处的世界。")}</span><span>1800.01 <ArrowRight size={11} /> {latestMonth.replace("-", ".")}<span className="footer-dot" /> {historicalBorders ? `${mapEra.year} ${t("年边界快照 · 非逐月精确疆界")}` : t("当代地理边界")}</span></div>
+    <footer className="month-navigator" aria-label={t("历史月份")}>
+      <div className="month-navigator-label"><CalendarDays size={16} /><span>{t("历史月份")}</span><small>1800 — {today.slice(0, 4)}</small></div>
+      <div className="month-navigator-controls"><button className="icon-button" disabled={monthIndex(month) <= 0} aria-label={t("上个月")} onClick={() => navigateMonth(monthIndex(month) - 1)}><ChevronLeft size={17} /></button><label className="month-input"><input type="month" min="1800-01" max={latestMonth} value={month} aria-label={t("选择历史月份")} onInput={e => {
+          if (/^\d{4}-\d{2}$/.test(e.currentTarget.value)) navigateMonth(monthIndex(e.currentTarget.value));
+        }} onChange={e => {
+          if (/^\d{4}-\d{2}$/.test(e.target.value)) navigateMonth(monthIndex(e.target.value));
+        }} /><ChevronDown size={12} /></label><button className="icon-button" disabled={monthIndex(month) >= lastIndex} aria-label={t("下个月")} onClick={() => navigateMonth(monthIndex(month) + 1)}><ChevronRight size={17} /></button></div>
+      <button className="today-button" onClick={() => navigateMonth(lastIndex)}>{t("回到当下 ")}<ArrowUpRight size={12} /></button>
     </footer>
 
     {activeEvent && <Modal title={activeEvent.title} onClose={() => setActiveEvent(null)} className="event-modal">{activeEvent.imageUrl && <div className="detail-image"><img src={activeEvent.imageUrl} alt={activeEvent.title} loading="lazy" /><span>{t("历史资料照片 · 已压缩为 WebP")}</span></div>}<div className="detail-content"><span className="eyebrow">A MOMENT IN HISTORY</span><div className="detail-meta"><span>{prettyDate(activeEvent.date)}</span><span>{t(categories.find(c => c.id === activeEvent.category)?.name ?? "")}</span></div><h2>{activeEvent.title}</h2><p className="detail-summary" lang={activeEvent.contentLocale}>{activeEvent.summary}</p>{activeEvent.translationStatus && activeEvent.translationStatus !== "original" && <div className="detail-translation"><span className={`translation-badge translation-${activeEvent.translationStatus}`}>{activeEvent.translationStatus === "translated" ? t("机器翻译") : activeEvent.translationStatus === "pending" ? t("正在翻译") : t("暂未提供译文")}</span><p>{t("公开史料的机器译文，仅辅助阅读；史实以原始来源为准。")}</p>{activeEvent.translatedBy && <small>{t("翻译来源：")}{activeEvent.translatedBy}</small>}</div>}{(activeEvent.originalTitle || activeEvent.originalSummary) && <details className="original-text"><summary>{t("查看原文")}</summary><h3>{activeEvent.originalTitle}</h3><p>{activeEvent.originalSummary}</p></details>}{activeEvent.imageCredit && <details className="image-attribution"><summary>{t("图片来源与授权")}</summary><p>{activeEvent.imageCredit}</p>{activeEvent.imageCredit.match(/https:\/\/commons\.wikimedia\.org\/wiki\/File:[^\s]+/)?.[0] && <a href={activeEvent.imageCredit.match(/https:\/\/commons\.wikimedia\.org\/wiki\/File:[^\s]+/)![0]} target="_blank" rel="noreferrer">{t("原始文件与作者信息 ")}<ExternalLink size={11} /></a>}</details>}<div className="detail-countries">{activeEvent.countryCodes.map(code => <button key={code} onClick={() => {

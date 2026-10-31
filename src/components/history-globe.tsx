@@ -4,12 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { countryByCode, countryByNumeric } from '@/lib/countries';
+import { countryByCode } from '@/lib/countries';
 import { getMapEra } from '@/lib/map-eras';
 import type { HistoryEvent } from '@/lib/types';
 import type { Locale } from '@/lib/locale';
 import { createGlobeFlight, sampleGlobeFlight, type GlobeFlight } from '@/lib/globe-motion';
 import { GlobePointerGesture } from '@/lib/globe-gesture';
+import { decodeMapData, readMapData, countryMapName as countryDisplayName, territoryDescription, majorAnchors, insideCountry, type Coordinate, type GeoCountry, type Topology, type HistoricalGeoJSON } from '@/lib/map-geometry';
 
 export type GlobeTheme = 'light' | 'dark';
 
@@ -18,13 +19,8 @@ const globePalettes = {
   light: { ocean: '#103754', land: '#718a9a', selectedLand: '#a3b4bf', surface: 0xe7eff4, emissive: 0x081826, ambient: 0xd3dfe8, ambientIntensity: 0.95, sunlight: 0xfff9ed, sunlightIntensity: 2.1, rim: 0x8aa5bc, rimIntensity: 0.75, specular: 0x3e5769, atmosphere: 0x6088a5, atmosphereOpacity: 0.20, grid: 0x668ba0, gridOpacity: 0.09, borders: 0xc2d3dd, borderOpacity: 0.48, selectedBorder: 0xffedcf, pin: 0xc59d70, pinActive: 0xffe9c8, ring: 0xbe9665, stem: 0xa47e50, label: '#f1f6f9', selectedLabel: '#fff2db', labelShadow: '0 1px 3px #102d43,0 0 5px #102d43,0 0 9px #102d43' },
 } as const;
 
-type Coordinate = [number, number];
-type Polygon = Coordinate[][];
-type GeoCountry = { code: string; name: string; polygons: Polygon[]; historical?: boolean; subject?: string | null };
-type HistoricalGeoJSON = { features: { properties: { name: string; subject?: string | null; code: string | null }; geometry: { type: string; coordinates: Polygon | Polygon[] } }[] };
-type Topology = { transform: { scale: Coordinate; translate: Coordinate }; arcs: Coordinate[][]; objects: { countries: { geometries: { id: string; properties: { name: string }; type: string; arcs: number[][] | number[][][] }[] } } };
-
 export interface HistoryGlobeProps {
+  active?: boolean;
   events: HistoryEvent[];
   selectedCountry: string | null;
   selectedTerritory?: string | null;
@@ -40,34 +36,15 @@ export interface HistoryGlobeProps {
   onTerritorySelect?: (territory: { name: string; subject: string | null; year: number; countryCode: string | null }) => void;
 }
 
-const historicalNames: Record<string, string> = {
-  'Qing Empire': '清朝', 'Qing': '清朝', 'China': '中国', 'Republic of China': '中华民国',
-  'United States': '美国', 'United States of America': '美国', 'United Kingdom': '英国',
-  'United Kingdom of Great Britain and Ireland': '英国', 'France': '法国', 'Prussia': '普鲁士',
-  'Germany': '德国', 'German Empire': '德意志帝国', 'East Germany': '东德', 'West Germany': '西德',
-  'Russian Empire': '俄罗斯帝国', 'Russia': '俄罗斯', 'USSR': '苏联', 'Soviet Union': '苏联',
-  'Ottoman Empire': '奥斯曼帝国', 'Turkey': '土耳其', 'Türkiye': '土耳其',
-  'India': '印度', 'British Raj': '英属印度', 'Japan': '日本', 'Imperial Japan': '日本帝国',
-  'Brazil': '巴西', 'Viceroyalty of Brazil': '巴西总督区', 'Kingdom of Brazil': '巴西王国',
-  'Australia': '澳大利亚', 'Australian aboriginal hunter-gatherers': '澳洲原住民地区',
-  'Canada': '加拿大', 'Egypt': '埃及', 'South Africa': '南非', 'Italy': '意大利',
-  'Papal States': '教皇国', 'Mexico': '墨西哥', 'Viceroyalty of New Spain': '新西班牙总督区', 'Spain': '西班牙',
-};
-const majorAnchors: [string, number, number][] = [
-  ['CN', 35, 105], ['US', 39, -77], ['GB', 54, -2], ['FR', 47, 2], ['RU', 56, 40], ['JP', 36, 138],
-  ['IN', 24, 78], ['BR', -15, -48], ['AU', -25, 135], ['CA', 47, -72], ['TR', 39, 33], ['DE', 52, 13],
-  ['EG', 27, 30], ['ZA', -30, 25], ['IT', 43, 12], ['MX', 20, -100], ['ES', 40, -4], ['ID', -3, 117],
-];
-
 const globeText = {
   'zh-CN': {
     canvas: '可拖动、缩放的世界地球仪，点击国家查看历史事件',
     labels: '地球主要国家与历史政权',
     loading: '正在展开世界地图…',
     historicalMapUnavailable: '历史地图暂时无法加载，当前回退显示现代国界。',
-    mapUnavailable: '地图资源加载失败，请刷新重试；仍可使用国家筛选和时间轴。',
+    mapUnavailable: '地图资源加载失败，请刷新重试；仍可使用国家筛选和月份选择。',
     webglUnavailable: '当前设备无法显示 3D 地球',
-    fallback: '仍可使用国家筛选与时间轴探索全部事件',
+    fallback: '仍可使用国家筛选与月份选择探索全部事件',
     historicalEntity: '查看历史政权信息与事件',
     contemporary: '当代国界',
   },
@@ -76,65 +53,18 @@ const globeText = {
     labels: 'Major countries and historical territories',
     loading: 'Unfolding the world map…',
     historicalMapUnavailable: 'The historical map could not load. Showing contemporary borders instead.',
-    mapUnavailable: 'Map assets could not load. Refresh to retry, or explore events with the country filters and timeline.',
+    mapUnavailable: 'Map assets could not load. Refresh to retry, or explore events with the country and month filters.',
     webglUnavailable: 'This device cannot display the 3D globe',
-    fallback: 'You can still explore every event using the country filters and timeline.',
+    fallback: 'You can still explore every event using the country and month filters.',
     historicalEntity: 'Explore this historical territory and its events',
     contemporary: 'Contemporary borders',
   },
 } as const;
 
-function countryDisplayName(country: GeoCountry, locale: Locale, fallbackCode?: string) {
-  if (country.historical) return locale === 'zh-CN' ? historicalNames[country.name] || country.name : country.name;
-  const reference = countryByCode[country.code || fallbackCode || ''];
-  return (locale === 'zh-CN' ? reference?.name : reference?.nameEn) || country.name;
-}
-
-function territoryDescription(country: GeoCountry, year: number, locale: Locale) {
-  const name = countryDisplayName(country, locale);
-  const subject = country.subject && country.subject !== country.name ? (locale === 'zh-CN' ? historicalNames[country.subject] || country.subject : country.subject) : null;
-  const reference = countryByCode[country.code];
-  const filterName = (locale === 'zh-CN' ? reference?.name : reference?.nameEn) || country.code;
-  const mapDate = country.historical ? (locale === 'zh-CN' ? `${year} 年边界快照` : `${year} border snapshot`) : globeText[locale].contemporary;
-  const action = country.code ? (locale === 'zh-CN' ? `以现代 ${filterName} 筛选事件` : `Filter events using present-day ${filterName}`) : globeText[locale].historicalEntity;
-  return `${name}${subject ? ` · ${subject}` : ''}\n${mapDate}\n${action}`;
-}
-
 function spherePosition(lat: number, lng: number, radius = 1) {
   const phi = lat * Math.PI / 180;
   const theta = lng * Math.PI / 180;
   return new THREE.Vector3(radius * Math.cos(phi) * Math.sin(theta), radius * Math.sin(phi), radius * Math.cos(phi) * Math.cos(theta));
-}
-
-function decodeTopology(topology: Topology): GeoCountry[] {
-  const decoded = topology.arcs.map(arc => {
-    let x = 0; let y = 0;
-    return arc.map(([dx, dy]) => {
-      x += dx; y += dy;
-      return [x * topology.transform.scale[0] + topology.transform.translate[0], y * topology.transform.scale[1] + topology.transform.translate[1]] as Coordinate;
-    });
-  });
-  const ring = (indices: number[]) => indices.flatMap((index, i) => {
-    const points = index < 0 ? [...decoded[~index]].reverse() : decoded[index];
-    return i ? points.slice(1) : points;
-  });
-  return topology.objects.countries.geometries.map(geometry => ({
-    code: countryByNumeric[String(geometry.id).padStart(3, '0')]?.code || ({ Kosovo: 'XK', 'N. Cyprus': 'CY', Somaliland: 'SO' } as Record<string, string>)[geometry.properties.name] || '',
-    name: geometry.properties.name,
-    polygons: (geometry.type === 'Polygon' ? [geometry.arcs as number[][]] : geometry.arcs as number[][][]).map(polygon => polygon.map(ring)),
-  }));
-}
-
-function insideRing(point: Coordinate, ring: Coordinate[]) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i]; const [xj, yj] = ring[j];
-    if (((yi > point[1]) !== (yj > point[1])) && point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-function insideCountry(point: Coordinate, country: GeoCountry) {
-  return country.polygons.some(polygon => insideRing(point, polygon[0]) && !polygon.slice(1).some(hole => insideRing(point, hole)));
 }
 
 function borderGeometry(items: GeoCountry[], radius = 1.004) {
@@ -399,17 +329,9 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
       if (file === activeMapFile) return;
       activeMapFile = file; mapAbort?.abort(); mapAbort = new AbortController();
       setReady(false); setHover(null);
-      fetch(file, { signal: mapAbort.signal }).then(async response => {
-        if (!response.ok) throw new Error('map');
-        const bytes = await response.arrayBuffer(); const signature = new Uint8Array(bytes, 0, Math.min(2, bytes.byteLength));
-        if (signature[0] === 0x1f && signature[1] === 0x8b) return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).json();
-        return JSON.parse(new TextDecoder().decode(bytes));
-      }).then((data: Topology | HistoricalGeoJSON) => {
+      fetch(file, { signal: mapAbort.signal }).then(readMapData).then((data: Topology | HistoricalGeoJSON) => {
         if (disposed || activeMapFile !== file) return;
-        geoCountries = historical ? (data as HistoricalGeoJSON).features.filter(feature => ['Polygon', 'MultiPolygon'].includes(feature.geometry.type)).map(feature => ({
-          code: feature.properties.code || '', name: feature.properties.name, subject: feature.properties.subject, historical: true,
-          polygons: feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates as Polygon] : feature.geometry.coordinates as Polygon[],
-        })) : decodeTopology(data as Topology);
+        geoCountries = decodeMapData(data);
         displayedMapYear = historical ? getMapEra(year).year : new Date().getFullYear();
         mapTexture?.dispose(); mapTexture = landTexture(geoCountries, current.current.selectedCountry, current.current.selectedTerritory, current.current.theme || 'light'); paintedSelection = selectionKey(); (globe.material as THREE.MeshPhongMaterial).map = mapTexture; globe.material.needsUpdate = true;
         if (countryBorders) { scene.remove(countryBorders); disposeObject(countryBorders); }
@@ -474,6 +396,8 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
     const render = (now: number) => {
       animation = requestAnimationFrame(render);
       const delta = Math.max(0, Math.min((now - previousFrame) / 1000, 0.05)); previousFrame = now;
+      controls.enabled = current.current.active !== false;
+      if (!controls.enabled) return;
       if (document.hidden) return;
       controls.autoRotate = !reducedMotion && !!current.current.autoRotate && !current.current.selectedCountry && !current.current.selectedTerritory && !flight;
       if (flight) {
