@@ -2,11 +2,12 @@
 
 import dynamic from "next/dynamic";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Compass, Database, ExternalLink, Globe2, Layers3, LoaderCircle, MapPin, Maximize, Pause, Play, RotateCcw, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Compass, Database, ExternalLink, Globe2, Layers3, LoaderCircle, MapPin, Maximize, Moon, Pause, Play, RotateCcw, Search, SlidersHorizontal, Sun, X } from "lucide-react";
 import { countries } from "@/lib/countries";
 import { getMapEra } from "@/lib/map-eras";
 import { createTranslator, countryDisplayName, formatMonth, formatHistoryDate } from "@/lib/i18n";
 import type { Locale } from "@/lib/locale";
+import type { Theme } from "@/lib/theme";
 import type { AtlasStatus, EventCategory, HistoryEvent } from "@/lib/types";
 const LocaleContext = createContext<Locale>("zh-CN");
 function GlobeLoading() {
@@ -25,31 +26,31 @@ const categories: {
 }[] = [{
   id: "politics",
   name: "政治与国际",
-  color: "#94b4ff"
+  color: "var(--category-politics)"
 }, {
   id: "conflict",
   name: "战争与冲突",
-  color: "#efb181"
+  color: "var(--category-conflict)"
 }, {
   id: "science",
   name: "科技与探索",
-  color: "#a3bbf5"
+  color: "var(--category-science)"
 }, {
   id: "economy",
   name: "经济与发展",
-  color: "#d8b7ff"
+  color: "var(--category-economy)"
 }, {
   id: "culture",
   name: "文化与艺术",
-  color: "#d2ade7"
+  color: "var(--category-culture)"
 }, {
   id: "society",
   name: "社会与变革",
-  color: "#b1a3ef"
+  color: "var(--category-society)"
 }, {
   id: "disaster",
   name: "灾难与环境",
-  color: "#d9998c"
+  color: "var(--category-disaster)"
 }];
 const monthIndex = (month: string) => (Number(month.slice(0, 4)) - 1800) * 12 + Number(month.slice(5, 7)) - 1;
 const indexMonth = (index: number) => `${1800 + Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, "0")}`;
@@ -77,18 +78,27 @@ function Modal({
 }
 export default function HistoryAtlas({
   today,
-  initialLocale = "zh-CN"
+  initialLocale = "zh-CN",
+  initialTheme = "light"
 }: {
   today: string;
   initialLocale?: Locale;
+  initialTheme?: Theme;
 }) {
   const [locale, setLocale] = useState<Locale>(initialLocale);
+  const [theme, setTheme] = useState<Theme>(initialTheme);
   const [localeReady, setLocaleReady] = useState(false);
   const t = createTranslator(locale);
   const countryName = (code: string) => countryDisplayName(code, locale);
   const monthLabel = (value: string) => formatMonth(value, locale);
   const prettyDate = (value: string) => formatHistoryDate(value, locale);
   const number = (value: number) => new Intl.NumberFormat(locale).format(value);
+  const toggleTheme = () => {
+    const nextTheme = theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = nextTheme;
+    document.cookie = `epoch-theme=${nextTheme};path=/;max-age=31536000;SameSite=Lax`;
+    setTheme(nextTheme);
+  };
   useEffect(() => {
     try {
       const cookie = document.cookie.match(/(?:^|;\s*)epoch-locale=(zh-CN|en)(?:;|$)/)?.[1];
@@ -376,6 +386,7 @@ export default function HistoryAtlas({
             setLocale(event.target.value as Locale);
             setTranslationError(null);
           }}><option value="zh-CN">简体中文</option><option value="en">English</option></select><ChevronDown size={11} /></label>
+      <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={theme === "light" ? t("切换到黑夜主题") : t("切换到白天主题")} title={theme === "light" ? t("切换到黑夜主题") : t("切换到白天主题")} aria-pressed={theme === "dark"}>{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}</button>
       <button className="help-button" onClick={() => setInfoOpen(true)} aria-label={t("了解纪元")}><CircleHelp size={19} /></button>
     </header>
 
@@ -412,7 +423,7 @@ export default function HistoryAtlas({
                 setTerritory(null);
               }}>{t("当代地图")}</button></div></div>
         <div className="year-watermark" aria-hidden="true">{month.slice(0, 4)}<span>{month.slice(5, 7)}</span></div>
-        <div className="globe-canvas"><HistoryGlobe events={visibleMapEvents} selectedCountry={selectedCountry} selectedTerritory={territory?.name ?? null} onCountrySelect={selectCountry} locale={locale} onEventSelect={setActiveEvent} onTerritorySelect={value => {
+        <div className="globe-canvas"><HistoryGlobe events={visibleMapEvents} selectedCountry={selectedCountry} selectedTerritory={territory?.name ?? null} onCountrySelect={selectCountry} locale={locale} theme={theme} onEventSelect={setActiveEvent} onTerritorySelect={value => {
               setTerritory(value);
               if (!value.countryCode) {
                 setSelectedCountry(null);

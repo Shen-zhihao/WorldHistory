@@ -29,6 +29,8 @@ const english: Record<string, string> = {
   "清空搜索": "Clear search",
   "国家与地区 · 进入历史档案": "Countries & territories · Explore history",
   "了解纪元": "About EPOCH",
+  "切换到黑夜主题": "Switch to dark theme",
+  "切换到白天主题": "Switch to light theme",
   "转动地球，": "Turn the globe.",
   "回望": "Discover ",
   "世界。": "the past.",

@@ -11,6 +11,13 @@ import type { Locale } from '@/lib/locale';
 import { createGlobeFlight, sampleGlobeFlight, type GlobeFlight } from '@/lib/globe-motion';
 import { GlobePointerGesture } from '@/lib/globe-gesture';
 
+export type GlobeTheme = 'light' | 'dark';
+
+const globePalettes = {
+  dark: { ocean: '#071b31', land: '#40566a', selectedLand: '#8799a7', surface: 0xd3e0e9, emissive: 0x071522, ambient: 0xb7c7d4, ambientIntensity: 0.82, sunlight: 0xf4f4ec, sunlightIntensity: 2.2, rim: 0x819eb7, rimIntensity: 1.05, specular: 0x2d4557, atmosphere: 0x668ba6, atmosphereOpacity: 0.23, grid: 0x55768b, gridOpacity: 0.10, borders: 0x9ab3c2, borderOpacity: 0.40, selectedBorder: 0xf0e8da, pin: 0xd4ae7e, pinActive: 0xffead0, ring: 0xcaa577, stem: 0xb99970, label: '#e1ebf2', selectedLabel: '#fff0d8', labelShadow: '0 1px 3px #061725,0 0 7px #061725,0 0 12px #061725' },
+  light: { ocean: '#103754', land: '#718a9a', selectedLand: '#a3b4bf', surface: 0xe7eff4, emissive: 0x081826, ambient: 0xd3dfe8, ambientIntensity: 0.95, sunlight: 0xfff9ed, sunlightIntensity: 2.1, rim: 0x8aa5bc, rimIntensity: 0.75, specular: 0x3e5769, atmosphere: 0x6088a5, atmosphereOpacity: 0.20, grid: 0x668ba0, gridOpacity: 0.09, borders: 0xc2d3dd, borderOpacity: 0.48, selectedBorder: 0xffedcf, pin: 0xc59d70, pinActive: 0xffe9c8, ring: 0xbe9665, stem: 0xa47e50, label: '#f1f6f9', selectedLabel: '#fff2db', labelShadow: '0 1px 3px #102d43,0 0 5px #102d43,0 0 9px #102d43' },
+} as const;
+
 type Coordinate = [number, number];
 type Polygon = Coordinate[][];
 type GeoCountry = { code: string; name: string; polygons: Polygon[]; historical?: boolean; subject?: string | null };
@@ -29,6 +36,7 @@ export interface HistoryGlobeProps {
   mapYear?: number;
   historicalBorders?: boolean;
   locale?: Locale;
+  theme?: GlobeTheme;
   onTerritorySelect?: (territory: { name: string; subject: string | null; year: number; countryCode: string | null }) => void;
 }
 
@@ -141,10 +149,11 @@ function borderGeometry(items: GeoCountry[], radius = 1.004) {
   return new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 }
 
-function landTexture(items: GeoCountry[], selectedCode?: string | null, selectedName?: string | null) {
+function landTexture(items: GeoCountry[], selectedCode?: string | null, selectedName?: string | null, theme: GlobeTheme = 'light') {
+  const palette = globePalettes[theme];
   const canvas = document.createElement('canvas'); canvas.width = 2048; canvas.height = 1024;
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#080d22'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = palette.ocean; ctx.fillRect(0, 0, canvas.width, canvas.height);
   items.forEach(country => country.polygons.forEach(polygon => {
     ctx.beginPath();
     polygon.forEach(ring => ring.forEach(([lng, lat], i) => {
@@ -152,7 +161,7 @@ function landTexture(items: GeoCountry[], selectedCode?: string | null, selected
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }));
     const selected = (selectedCode && country.code === selectedCode) || (selectedName && country.name === selectedName);
-    ctx.fillStyle = selected ? '#5c61a6' : '#263c6a'; ctx.fill('evenodd');
+    ctx.fillStyle = selected ? palette.selectedLand : palette.land; ctx.fill('evenodd');
   }));
   // The sphere's default UV origin is 90° west of our longitude convention.
   const texture = new THREE.CanvasTexture(canvas);
@@ -178,7 +187,7 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
   const text = globeText[locale];
   const hostRef = useRef<HTMLDivElement>(null);
   const current = useRef(props); current.current = props;
-  const sceneApi = useRef<{ update: () => void; reset: () => void; loadMap: (year: number, historical: boolean) => void; refreshLocale: () => void } | null>(null);
+  const sceneApi = useRef<{ update: () => void; reset: () => void; loadMap: (year: number, historical: boolean) => void; refreshLocale: () => void; refreshTheme: () => void } | null>(null);
   const [hover, setHover] = useState<{ text: string; x: number; y: number } | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -187,6 +196,8 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    const getPalette = () => globePalettes[current.current.theme || 'light'];
+    const initialPalette = getPalette();
     let disposed = false; let animation = 0; let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' }); }
     catch { setFailed(true); return; }
@@ -209,16 +220,18 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
     controls.autoRotateSpeed = 0.35;
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const overviewDistance = 3.65;
-    const globe = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), new THREE.MeshPhongMaterial({ color: 0xb8c7ff, emissive: 0x080e25, emissiveIntensity: 0.24, shininess: 10, specular: 0x11233e }));
-    scene.add(globe, new THREE.AmbientLight(0x9aa7d7, 0.85));
+    const globe = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), new THREE.MeshPhongMaterial({ color: initialPalette.surface, emissive: initialPalette.emissive, emissiveIntensity: 0.20, shininess: 12, specular: initialPalette.specular }));
+    const ambient = new THREE.AmbientLight(initialPalette.ambient, initialPalette.ambientIntensity);
+    scene.add(globe, ambient);
     // A consistent, soft studio key keeps the sphere's depth visible on either hemisphere.
     const keyOffset = new THREE.Vector3(-3.4, 2.4, 3.8);
     const rimOffset = new THREE.Vector3(3.2, 0.5, -2);
-    const sunlight = new THREE.DirectionalLight(0xd7e1ff, 2.4); scene.add(sunlight);
-    const rimlight = new THREE.DirectionalLight(0x5b4ecc, 1.6); scene.add(rimlight);
+    const sunlight = new THREE.DirectionalLight(initialPalette.sunlight, initialPalette.sunlightIntensity); scene.add(sunlight);
+    const rimlight = new THREE.DirectionalLight(initialPalette.rim, initialPalette.rimIntensity); scene.add(rimlight);
     const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1.06, 64, 48), new THREE.ShaderMaterial({
+      uniforms: { rimColor: { value: new THREE.Color(initialPalette.atmosphere) }, rimOpacity: { value: initialPalette.atmosphereOpacity } },
       vertexShader: 'varying vec3 vNormal;varying vec3 vPosition;void main(){vNormal=normalize(normalMatrix*normal);vec4 p=modelViewMatrix*vec4(position,1.0);vPosition=p.xyz;gl_Position=projectionMatrix*p;}',
-      fragmentShader: 'varying vec3 vNormal;varying vec3 vPosition;void main(){float edge=1.0-max(0.0,dot(normalize(vNormal),normalize(-vPosition)));float intensity=pow(edge,4.5);gl_FragColor=vec4(0.30,0.42,1.0,intensity*0.46);}',
+      fragmentShader: 'uniform vec3 rimColor;uniform float rimOpacity;varying vec3 vNormal;varying vec3 vPosition;void main(){float edge=1.0-max(0.0,dot(normalize(vNormal),normalize(-vPosition)));float intensity=pow(edge,4.5);gl_FragColor=vec4(rimColor,intensity*rimOpacity);}',
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.FrontSide,
     })); scene.add(atmosphere);
     const gridPositions: number[] = [];
@@ -228,20 +241,20 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
     for (let lng = -180; lng < 180; lng += 30) for (let lat = -90; lat < 90; lat += 3) {
       const a = spherePosition(lat, lng, 1.001); const b = spherePosition(lat + 3, lng, 1.001); gridPositions.push(...a.toArray(), ...b.toArray());
     }
-    scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(gridPositions, 3)), new THREE.LineBasicMaterial({ color: 0x405899, transparent: true, opacity: 0.13 })));
+    const grid = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(gridPositions, 3)), new THREE.LineBasicMaterial({ color: initialPalette.grid, transparent: true, opacity: initialPalette.gridOpacity })); scene.add(grid);
     const starPositions: number[] = [];
     for (let i = 0; i < 650; i++) {
       const u = ((i * 0.61803398875) % 1) * 2 - 1; const angle = i * 2.399963;
       starPositions.push(Math.sqrt(1 - u * u) * Math.cos(angle) * 14, u * 14, Math.sqrt(1 - u * u) * Math.sin(angle) * 14);
     }
-    scene.add(new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3)), new THREE.PointsMaterial({ color: 0x9aa4d2, size: 0.014, transparent: true, opacity: 0.6, sizeAttenuation: true })));
+    const stars = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3)), new THREE.PointsMaterial({ color: 0x9fb1c0, size: 0.014, transparent: true, opacity: 0.35, sizeAttenuation: true })); scene.add(stars);
     const pins = new THREE.Group(); scene.add(pins);
     let pinEvents: HistoryEvent[] = []; let pinRings: THREE.InstancedMesh | null = null;
     let geoCountries: GeoCountry[] = []; let selectedBorder: THREE.LineSegments | null = null; let mapTexture: THREE.Texture | null = null; let countryBorders: THREE.LineSegments | null = null; let displayedMapYear = current.current.mapYear || 1969;
     let flight: GlobeFlight | null = null;
     let lastCountry: string | null | undefined; let lastTerritory: string | null | undefined; let lastEvent: string | null | undefined;
     let paintedSelection = '';
-    const selectionKey = () => JSON.stringify([current.current.selectedCountry, current.current.selectedTerritory || null]);
+    const selectionKey = () => JSON.stringify([current.current.selectedCountry, current.current.selectedTerritory || null, current.current.theme || 'light']);
     const beginFlight = (destination: THREE.Vector3) => {
       const origin = camera.position.clone();
       // Consume residual control inertia without rendering its intermediate pose.
@@ -275,7 +288,7 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
         if (seen.has(key)) continue; seen.add(key);
         const name = countryDisplayName(country, current.current.locale || 'zh-CN', code);
         const button = document.createElement('button'); button.type = 'button'; button.textContent = `· ${name}`;
-        button.style.cssText = 'position:absolute;display:none;transform:translate(-50%,-50%);background:transparent;border:0;padding:4px 3px;color:#d4ddff;font:500 10px/1.1 system-ui,sans-serif;letter-spacing:.02em;text-shadow:0 1px 3px #060b22,0 0 7px #060b22,0 0 12px #060b22;max-width:120px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;pointer-events:auto;cursor:pointer';
+        button.style.cssText = `position:absolute;display:none;transform:translate(-50%,-50%);background:transparent;border:0;padding:4px 3px;color:${getPalette().label};font:500 10px/1.1 system-ui,sans-serif;letter-spacing:.02em;text-shadow:${getPalette().labelShadow};max-width:120px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;pointer-events:auto;cursor:pointer`;
         button.title = territoryDescription(country, displayedMapYear, current.current.locale || 'zh-CN');
         button.setAttribute('aria-label', button.title);
         button.addEventListener('click', event => { event.stopPropagation(); selectTerritory(country, [lng, lat]); });
@@ -288,6 +301,37 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
       labelLayer.setAttribute('aria-label', globeText[current.current.locale || 'zh-CN'].labels);
       setHover(null);
       updateMajorLabels();
+    };
+    const refreshTheme = () => {
+      if (disposed) return;
+      const palette = getPalette();
+      const material = globe.material as THREE.MeshPhongMaterial;
+      material.color.setHex(palette.surface); material.emissive.setHex(palette.emissive); material.specular.setHex(palette.specular);
+      ambient.color.setHex(palette.ambient); ambient.intensity = palette.ambientIntensity;
+      sunlight.color.setHex(palette.sunlight); sunlight.intensity = palette.sunlightIntensity;
+      rimlight.color.setHex(palette.rim); rimlight.intensity = palette.rimIntensity;
+      atmosphere.material.uniforms.rimColor.value.setHex(palette.atmosphere);
+      atmosphere.material.uniforms.rimOpacity.value = palette.atmosphereOpacity;
+      atmosphere.material.blending = (current.current.theme || 'light') === 'light' ? THREE.NormalBlending : THREE.AdditiveBlending;
+      atmosphere.material.needsUpdate = true;
+      grid.material.color.setHex(palette.grid); grid.material.opacity = palette.gridOpacity;
+      stars.visible = (current.current.theme || 'light') === 'dark';
+      if (countryBorders) { const border = countryBorders.material as THREE.LineBasicMaterial; border.color.setHex(palette.borders); border.opacity = palette.borderOpacity; }
+      if (selectedBorder) (selectedBorder.material as THREE.LineBasicMaterial).color.setHex(palette.selectedBorder);
+      if (mapTexture) {
+        const previousTexture = mapTexture;
+        mapTexture = landTexture(geoCountries, current.current.selectedCountry, current.current.selectedTerritory, current.current.theme || 'light');
+        material.map = mapTexture; previousTexture.dispose(); paintedSelection = selectionKey();
+      }
+      // Recolor existing batches in place; theme switching must not touch camera flights.
+      for (const object of pins.children) {
+        if (object instanceof THREE.InstancedMesh) {
+          pinEvents.forEach((event, index) => object.setColorAt(index, new THREE.Color(current.current.activeEventId === event.id ? palette.pinActive : object === pinRings ? palette.ring : palette.pin)));
+          if (object.instanceColor) object.instanceColor.needsUpdate = true;
+        } else if (object instanceof THREE.LineSegments) (object.material as THREE.LineBasicMaterial).color.setHex(palette.stem);
+      }
+      for (const label of majorLabels) label.element.style.textShadow = palette.labelShadow;
+      setHover(null);
     };
     const update = () => {
       if (disposed) return;
@@ -304,26 +348,26 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
           const active = current.current.activeEventId === event.id;
           const position = spherePosition(event.lat + (index % 3 - 1) * 0.4, event.lng + (index % 2) * 0.5, 1.014);
           matrix.position.copy(position); matrix.quaternion.identity(); matrix.scale.setScalar(active ? 0.018 : 0.012); matrix.updateMatrix();
-          dots.setMatrixAt(index, matrix.matrix); dots.setColorAt(index, new THREE.Color(active ? 0xffecd0 : 0xffb46d));
+          dots.setMatrixAt(index, matrix.matrix); dots.setColorAt(index, new THREE.Color(active ? getPalette().pinActive : getPalette().pin));
           matrix.scale.setScalar(active ? 1.35 : 1); matrix.lookAt(position.clone().multiplyScalar(2)); matrix.updateMatrix();
-          rings.setMatrixAt(index, matrix.matrix); rings.setColorAt(index, new THREE.Color(active ? 0xffe7ba : 0xffad66));
+          rings.setMatrixAt(index, matrix.matrix); rings.setColorAt(index, new THREE.Color(active ? getPalette().pinActive : getPalette().ring));
           stemPositions.push(...position.toArray(), ...position.clone().multiplyScalar(active ? 1.14 : 1.08).toArray());
         });
         dots.instanceMatrix.needsUpdate = true; rings.instanceMatrix.needsUpdate = true;
         if (dots.instanceColor) dots.instanceColor.needsUpdate = true;
         if (rings.instanceColor) rings.instanceColor.needsUpdate = true;
         dots.computeBoundingSphere(); rings.computeBoundingSphere();
-        const stems = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(stemPositions, 3)), new THREE.LineBasicMaterial({ color: 0xffb874, transparent: true, opacity: 0.72 }));
+        const stems = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(stemPositions, 3)), new THREE.LineBasicMaterial({ color: getPalette().stem, transparent: true, opacity: 0.62 }));
         pins.add(dots, rings, stems); pinRings = rings;
       }
       if (selectedBorder) { scene.remove(selectedBorder); disposeObject(selectedBorder); selectedBorder = null; }
       const selected = geoCountries.filter(country => country.code === current.current.selectedCountry || (current.current.selectedTerritory && country.name === current.current.selectedTerritory));
       if (selected.length) {
-        selectedBorder = new THREE.LineSegments(borderGeometry(selected, 1.009), new THREE.LineBasicMaterial({ color: 0xf5c58b, transparent: true, opacity: 1 })); scene.add(selectedBorder);
+        selectedBorder = new THREE.LineSegments(borderGeometry(selected, 1.009), new THREE.LineBasicMaterial({ color: getPalette().selectedBorder, transparent: true, opacity: 1 })); scene.add(selectedBorder);
       }
       if (mapTexture && paintedSelection !== selectionKey()) {
         const previousTexture = mapTexture;
-        mapTexture = landTexture(geoCountries, current.current.selectedCountry, current.current.selectedTerritory);
+        mapTexture = landTexture(geoCountries, current.current.selectedCountry, current.current.selectedTerritory, current.current.theme || 'light');
         (globe.material as THREE.MeshPhongMaterial).map = mapTexture;
         previousTexture.dispose(); paintedSelection = selectionKey();
       }
@@ -367,9 +411,9 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
           polygons: feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates as Polygon] : feature.geometry.coordinates as Polygon[],
         })) : decodeTopology(data as Topology);
         displayedMapYear = historical ? getMapEra(year).year : new Date().getFullYear();
-        mapTexture?.dispose(); mapTexture = landTexture(geoCountries, current.current.selectedCountry, current.current.selectedTerritory); paintedSelection = selectionKey(); (globe.material as THREE.MeshPhongMaterial).map = mapTexture; globe.material.needsUpdate = true;
+        mapTexture?.dispose(); mapTexture = landTexture(geoCountries, current.current.selectedCountry, current.current.selectedTerritory, current.current.theme || 'light'); paintedSelection = selectionKey(); (globe.material as THREE.MeshPhongMaterial).map = mapTexture; globe.material.needsUpdate = true;
         if (countryBorders) { scene.remove(countryBorders); disposeObject(countryBorders); }
-        countryBorders = new THREE.LineSegments(borderGeometry(geoCountries), new THREE.LineBasicMaterial({ color: 0x7197e9, transparent: true, opacity: 0.47 })); scene.add(countryBorders);
+        countryBorders = new THREE.LineSegments(borderGeometry(geoCountries), new THREE.LineBasicMaterial({ color: getPalette().borders, transparent: true, opacity: getPalette().borderOpacity })); scene.add(countryBorders);
         update(); updateMajorLabels(); setReady(true);
         if (!fallback) setMapWarning(null);
         if (!historical) {
@@ -389,7 +433,8 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
         }
       });
     };
-    sceneApi.current = { update, reset, loadMap, refreshLocale };
+    sceneApi.current = { update, reset, loadMap, refreshLocale, refreshTheme };
+    refreshTheme();
     loadMap(current.current.mapYear || 1969, current.current.historicalBorders !== false);
     const raycaster = new THREE.Raycaster(); const pointer = new THREE.Vector2(); const gesture = new GlobePointerGesture();
     const hitTest = (event: PointerEvent): { kind: 'event'; event: HistoryEvent } | { kind: 'country'; country: GeoCountry; point: Coordinate } | null => {
@@ -450,7 +495,7 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
         const overlaps = occupied.some(previous => Math.abs(previous.x - x) < (previous.width + label.width) / 2 + 9 && Math.abs(previous.y - y) < 22);
         const visible = !occluded && !overlaps && occupied.length < maximum && screen.z < 1 && x > label.width / 2 + 6 && x < width - label.width / 2 - 6 && y > 16 && y < height - 16;
         label.element.style.display = visible ? 'block' : 'none';
-        if (visible) { label.element.style.left = `${x}px`; label.element.style.top = `${y}px`; label.element.style.color = current.current.selectedCountry === label.code ? '#ffcc96' : '#dce3ff'; occupied.push({ x, y, width: label.width }); }
+        if (visible) { label.element.style.left = `${x}px`; label.element.style.top = `${y}px`; label.element.style.color = current.current.selectedCountry === label.code ? getPalette().selectedLabel : getPalette().label; occupied.push({ x, y, width: label.width }); }
       }
     }; render(performance.now());
     return () => {
@@ -464,11 +509,12 @@ export default function HistoryGlobe(props: HistoryGlobeProps) {
   useEffect(() => { if (props.resetToken) sceneApi.current?.reset(); }, [props.resetToken]);
   useEffect(() => { sceneApi.current?.loadMap(props.mapYear || 1969, props.historicalBorders !== false); }, [props.mapYear, props.historicalBorders]);
   useEffect(() => { sceneApi.current?.refreshLocale(); }, [props.locale]);
+  useEffect(() => { sceneApi.current?.refreshTheme(); }, [props.theme]);
 
   return <div ref={hostRef} className="history-globe" style={{ position: 'absolute', inset: 0 }}>
-    {!ready && !failed && !mapWarning && <div role="status" style={{ position: 'absolute', zIndex: 3, left: '50%', top: '50%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: 8, color: '#abbcff', background: '#0b102add', border: '1px solid #667bbd33', padding: '10px 14px', borderRadius: 20, whiteSpace: 'nowrap', fontSize: 11, pointerEvents: 'none' }}><LoaderCircle size={14} className="spin" /><span>{text.loading}</span></div>}
-    {mapWarning && !failed && <div role="status" style={{ position: 'absolute', left: '12%', right: '12%', bottom: 80, color: '#e9be83', fontSize: 11, lineHeight: 1.7, textAlign: 'center', padding: '8px 12px', background: '#141a32e8', border: '1px solid #69553b', borderRadius: 6, pointerEvents: 'none' }}>{text[mapWarning]}</div>}
-    {failed && <div role="status" style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', padding: 32, color: '#c3ceee', background: 'radial-gradient(circle, #19264b, transparent 65%)' }}><span style={{ fontSize: 64 }}>◎</span><p>{text.webglUnavailable}</p><p style={{ fontSize: 12, color: '#8b96bb' }}>{text.fallback}</p></div>}
-    {hover && !failed && <div style={{ position: 'absolute', zIndex: 3, left: Math.max(12, Math.min(hover.x + 15, (hostRef.current?.clientWidth || 600) - 260)), top: Math.max(hover.y - 40, 12), padding: '9px 13px', borderRadius: 7, border: '1px solid #3d4a79', color: '#e5eaff', background: '#121932ec', fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-line', maxWidth: 230, pointerEvents: 'none', boxShadow: '0 8px 32px #0005' }}>{hover.text}</div>}
+    {!ready && !failed && !mapWarning && <div role="status" style={{ position: 'absolute', zIndex: 3, left: '50%', top: '50%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text)', background: 'var(--panel)', border: '1px solid var(--line)', padding: '10px 14px', borderRadius: 20, whiteSpace: 'nowrap', fontSize: 11, pointerEvents: 'none' }}><LoaderCircle size={14} className="spin" /><span>{text.loading}</span></div>}
+    {mapWarning && !failed && <div role="status" style={{ position: 'absolute', left: '12%', right: '12%', bottom: 80, color: 'var(--text)', fontSize: 11, lineHeight: 1.7, textAlign: 'center', padding: '8px 12px', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 6, pointerEvents: 'none' }}>{text[mapWarning]}</div>}
+    {failed && <div role="status" style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', padding: 32, color: 'var(--text)', background: 'var(--panel)' }}><span style={{ fontSize: 64 }}>◎</span><p>{text.webglUnavailable}</p><p style={{ fontSize: 12, color: 'var(--muted)' }}>{text.fallback}</p></div>}
+    {hover && !failed && <div style={{ position: 'absolute', zIndex: 3, left: Math.max(12, Math.min(hover.x + 15, (hostRef.current?.clientWidth || 600) - 260)), top: Math.max(hover.y - 40, 12), padding: '9px 13px', borderRadius: 7, border: '1px solid var(--line)', color: 'var(--text)', background: 'var(--panel)', fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-line', maxWidth: 230, pointerEvents: 'none', boxShadow: '0 8px 24px rgb(0 0 0 / 0.12)' }}>{hover.text}</div>}
   </div>;
 }

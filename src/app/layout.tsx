@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { normalizeLocale } from "@/lib/locale";
+import { normalizeTheme } from "@/lib/theme";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,6 +11,8 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const locale = normalizeLocale((await cookies()).get("epoch-locale")?.value);
-  return <html lang={locale}><body>{children}</body></html>;
+  const preferences = await cookies();
+  const locale = normalizeLocale(preferences.get("epoch-locale")?.value);
+  const theme = normalizeTheme(preferences.get("epoch-theme")?.value);
+  return <html lang={locale} data-theme={theme}><body>{children}</body></html>;
 }
