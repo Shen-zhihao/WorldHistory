@@ -10,6 +10,7 @@ import type { Locale } from "@/lib/locale";
 import type { Theme } from "@/lib/theme";
 import type { AtlasStatus, EventCategory, HistoryEvent } from "@/lib/types";
 import type { HistoryGlobeProps } from "./history-globe";
+import MonthPicker from "./month-picker";
 const LocaleContext = createContext<Locale>("zh-CN");
 function GlobeLoading() {
   const locale = useContext(LocaleContext);
@@ -310,7 +311,7 @@ export default function HistoryAtlas({
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if ((e.target as HTMLElement).matches("input,textarea,select") || !!(e.target as HTMLElement).closest("dialog")) return;
+      if ((e.target as HTMLElement).matches("input,textarea,select") || !!(e.target as HTMLElement).closest("dialog, [data-month-picker]")) return;
       if (e.key === "/") {
         e.preventDefault();
         searchRef.current?.focus();
@@ -467,7 +468,7 @@ export default function HistoryAtlas({
       <section className="event-panel" aria-label={t("历史事件列表")}>{loading && <div className="fetch-progress" role="status" aria-label={t("正在加载历史事件")}><span /></div>}
         <div className="panel-overline"><span className="small-square" /> {allTime ? "THE HISTORICAL ARCHIVE" : "MOMENTS THAT MATTER"}<span className="live-label">ARCHIVE</span></div>
         <div className="event-heading" key={`${selectedCountry ?? "world"}-${allTime}-${month}`}><div><p>{selectedCountry ? `${countryName(selectedCountry)} / ${allTime ? t("跨越时间") : monthLabel(month)}` : allTime ? t("跨越时间，寻找答案") : monthLabel(month)}</p><h2>{query ? t("历史搜索") : selectedCountry ? t("国家历史变迁") : allTime ? t("事件档案") : t("世界此刻，正在发生")}<span className="heading-dot">.</span></h2></div><span className="event-count">{String(total).padStart(2, "0")}<span>{allTime ? "RESULTS" : "EVENTS"}</span></span></div>
-        {selectedCountry && allTime && <div className="country-date-range"><label>{t("从")}<input type="month" min="1800-01" max={countryTo || latestMonth} value={countryFrom} onInput={e => setCountryFrom(e.currentTarget.value)} onChange={e => setCountryFrom(e.target.value)} aria-label={t("国家历史起始月份")} /></label><span>—</span><label>{t("至")}<input type="month" min={countryFrom || "1800-01"} max={latestMonth} value={countryTo} onInput={e => setCountryTo(e.currentTarget.value)} onChange={e => setCountryTo(e.target.value)} aria-label={t("国家历史结束月份")} /></label>{(countryFrom || countryTo) && <button aria-label={t("重置时间范围")} onClick={() => {
+        {selectedCountry && allTime && <div className="country-date-range"><MonthPicker value={countryFrom} onChange={setCountryFrom} min="1800-01" max={countryTo || latestMonth} currentMonth={latestMonth} defaultMonth={month} locale={locale} label={t("国家历史起始月份")} placeholder={t("开始月份")} clearable /><span aria-hidden="true">—</span><MonthPicker value={countryTo} onChange={setCountryTo} min={countryFrom || "1800-01"} max={latestMonth} currentMonth={latestMonth} defaultMonth={month} locale={locale} label={t("国家历史结束月份")} placeholder={t("结束月份")} clearable />{(countryFrom || countryTo) && <button className="range-reset" aria-label={t("重置时间范围")} onClick={() => {
               setCountryFrom("");
               setCountryTo("");
             }}><X size={12} /></button>}</div>}
@@ -498,11 +499,7 @@ export default function HistoryAtlas({
 
     <footer className="month-navigator" aria-label={t("历史月份")}>
       <div className="month-navigator-label"><CalendarDays size={16} /><span>{t("历史月份")}</span><small>1800 — {today.slice(0, 4)}</small></div>
-      <div className="month-navigator-controls"><button className="icon-button" disabled={monthIndex(month) <= 0} aria-label={t("上个月")} onClick={() => navigateMonth(monthIndex(month) - 1)}><ChevronLeft size={17} /></button><label className="month-input"><input type="month" min="1800-01" max={latestMonth} value={month} aria-label={t("选择历史月份")} onInput={e => {
-          if (/^\d{4}-\d{2}$/.test(e.currentTarget.value)) navigateMonth(monthIndex(e.currentTarget.value));
-        }} onChange={e => {
-          if (/^\d{4}-\d{2}$/.test(e.target.value)) navigateMonth(monthIndex(e.target.value));
-        }} /><ChevronDown size={12} /></label><button className="icon-button" disabled={monthIndex(month) >= lastIndex} aria-label={t("下个月")} onClick={() => navigateMonth(monthIndex(month) + 1)}><ChevronRight size={17} /></button></div>
+      <div className="month-navigator-controls"><button className="icon-button" disabled={monthIndex(month) <= 0} aria-label={t("上个月")} onClick={() => navigateMonth(monthIndex(month) - 1)}><ChevronLeft size={17} /></button><MonthPicker value={month} onChange={value => navigateMonth(monthIndex(value))} min="1800-01" max={latestMonth} currentMonth={latestMonth} locale={locale} label={t("选择历史月份")} variant="navigator" /><button className="icon-button" disabled={monthIndex(month) >= lastIndex} aria-label={t("下个月")} onClick={() => navigateMonth(monthIndex(month) + 1)}><ChevronRight size={17} /></button></div>
       <button className="today-button" onClick={() => navigateMonth(lastIndex)}>{t("回到当下 ")}<ArrowUpRight size={12} /></button>
     </footer>
 
